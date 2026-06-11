@@ -1,0 +1,23 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build
+[Bb]in/
+[Oo]bj/
+
+# NuGet (estilo packages.config: los paquetes no se versionan)
+packages/
+*.nupkg
+nuget.exe
+
+# Datos locales de la aplicación
+grpSPEF/pjtSPEF/App_Data/storage/
+*.mdf
+*.ldf
+
+# Otros
+*.log

@@ -1,0 +1,55 @@
+@model pjtSPEF.Models.ViewModels.ExamenBaseFormViewModel
+@{
+    ViewBag.Title = "Nuevo examen base";
+    var tipo = (pjtSPEF.Models.Entities.TipoEvaluacion)ViewBag.TipoEvaluacion;
+}
+
+@Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
+{
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(tipo.Unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = tipo.Unidad.CursoId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + tipo.Unidad.Numero, Url.Action("Details", "Unidades", new { id = tipo.UnidadId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(tipo.Nombre, Url.Action("Details", "TiposEvaluacion", new { id = tipo.Id })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Nuevo examen base")
+})
+
+<h2>Nuevo examen base</h2>
+<p class="text-muted">
+    Sube el PDF del examen <strong>con las respuestas correctas</strong> (el documento que usas para imprimir).
+    Máximo 10 páginas.
+</p>
+
+<div class="row">
+    <div class="col-md-6">
+        @using (Html.BeginForm("Create", "ExamenesBase", FormMethod.Post, new { enctype = "multipart/form-data" }))
+        {
+            @Html.AntiForgeryToken()
+            @Html.HiddenFor(m => m.TipoEvaluacionId)
+            @Html.ValidationSummary(true, "", new { @class = "text-danger" })
+
+            <div class="mb-3">
+                @Html.LabelFor(m => m.Titulo, new { @class = "form-label" })
+                @Html.TextBoxFor(m => m.Titulo, new { @class = "form-control", autofocus = "autofocus" })
+                @Html.ValidationMessageFor(m => m.Titulo, "", new { @class = "text-danger" })
+            </div>
+            <div class="mb-3">
+                @Html.LabelFor(m => m.NotaMaxima, new { @class = "form-label" })
+                @Html.TextBoxFor(m => m.NotaMaxima, new { @class = "form-control", type = "number", step = "0.5", min = "0.5" })
+                <div class="form-text">Por defecto 20 (escala vigesimal). Usa otro valor si el examen vale distinto (p. ej. 10).</div>
+                @Html.ValidationMessageFor(m => m.NotaMaxima, "", new { @class = "text-danger" })
+            </div>
+            <div class="mb-3">
+                @Html.LabelFor(m => m.ArchivoPdf, new { @class = "form-label" })
+                <input type="file" name="ArchivoPdf" id="ArchivoPdf" class="form-control" accept="application/pdf" />
+                @Html.ValidationMessageFor(m => m.ArchivoPdf, "", new { @class = "text-danger" })
+            </div>
+
+            <button type="submit" class="btn btn-primary">Crear examen</button>
+            <a href="@Url.Action("Details", "TiposEvaluacion", new { id = Model.TipoEvaluacionId })" class="btn btn-outline-secondary">Cancelar</a>
+        }
+    </div>
+</div>
+
+@section scripts {
+    @Scripts.Render("~/bundles/jqueryval")
+}

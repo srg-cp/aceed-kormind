@@ -1,0 +1,39 @@
+@model pjtSPEF.Models.ViewModels.TipoEvaluacionFormViewModel
+@{
+    ViewBag.Title = "Editar tipo de evaluación";
+    var unidad = (pjtSPEF.Models.Entities.Unidad)ViewBag.Unidad;
+}
+
+@Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
+{
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = unidad.CursoId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + unidad.Numero, Url.Action("Details", "Unidades", new { id = unidad.Id })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.Nombre, Url.Action("Details", new { id = Model.Id })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Editar")
+})
+
+<h2>Editar tipo de evaluación</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        @using (Html.BeginForm())
+        {
+            @Html.AntiForgeryToken()
+            @Html.ValidationSummary(true, "", new { @class = "text-danger" })
+
+            <div class="mb-3">
+                @Html.LabelFor(m => m.Nombre, new { @class = "form-label" })
+                @Html.TextBoxFor(m => m.Nombre, new { @class = "form-control" })
+                @Html.ValidationMessageFor(m => m.Nombre, "", new { @class = "text-danger" })
+            </div>
+
+            <button type="submit" class="btn btn-primary">Guardar cambios</button>
+            <a href="@Url.Action("Details", new { id = Model.Id })" class="btn btn-outline-secondary">Cancelar</a>
+        }
+    </div>
+</div>
+
+@section scripts {
+    @Scripts.Render("~/bundles/jqueryval")
+}

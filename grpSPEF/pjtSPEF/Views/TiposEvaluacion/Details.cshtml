@@ -1,0 +1,75 @@
+@model pjtSPEF.Models.Entities.TipoEvaluacion
+@{
+    ViewBag.Title = Model.Nombre;
+}
+
+@Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
+{
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.Unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = Model.Unidad.CursoId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + Model.Unidad.Numero, Url.Action("Details", "Unidades", new { id = Model.UnidadId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.Nombre)
+})
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">@Model.Nombre</h2>
+    <div>
+        <a href="@Url.Action("Edit", new { id = Model.Id })" class="btn btn-outline-secondary">Editar</a>
+        <a href="@Url.Action("Create", "ExamenesBase", new { tipoEvaluacionId = Model.Id })" class="btn btn-primary">Nuevo examen base</a>
+    </div>
+</div>
+
+<h5 class="mt-4">Exámenes base</h5>
+@if (!Model.ExamenesBase.Any())
+{
+    <div class="alert alert-info">
+        Aún no hay exámenes base. Sube el PDF del examen con respuestas para empezar.
+    </div>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Título</th>
+                <th>Nota máxima</th>
+                <th>Páginas</th>
+                <th>Estado</th>
+                <th class="text-end">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var examen in Model.ExamenesBase.OrderByDescending(e => e.FechaCreacion))
+            {
+                <tr>
+                    <td><a href="@Url.Action("Details", "ExamenesBase", new { id = examen.Id })">@examen.Titulo</a></td>
+                    <td>@examen.NotaMaxima.ToString("0.##")</td>
+                    <td>@(examen.TotalPaginas.HasValue ? examen.TotalPaginas.ToString() : "—")</td>
+                    <td>
+                        @switch (examen.Estado)
+                        {
+                            case pjtSPEF.Models.Entities.EstadoExamen.Borrador:
+                                <span class="badge bg-secondary">Borrador</span>
+                                break;
+                            case pjtSPEF.Models.Entities.EstadoExamen.Calibrado:
+                                <span class="badge bg-info">Calibrado</span>
+                                break;
+                            case pjtSPEF.Models.Entities.EstadoExamen.Activo:
+                                <span class="badge bg-success">Activo</span>
+                                break;
+                        }
+                    </td>
+                    <td class="text-end">
+                        <a href="@Url.Action("Details", "ExamenesBase", new { id = examen.Id })" class="btn btn-sm btn-outline-primary">Abrir</a>
+                        <a href="@Url.Action("Edit", "ExamenesBase", new { id = examen.Id })" class="btn btn-sm btn-outline-secondary">Editar</a>
+                        @using (Html.BeginForm("Delete", "ExamenesBase", new { id = examen.Id }, FormMethod.Post, new { @class = "d-inline", onsubmit = "return confirm('¿Eliminar este examen base y su PDF?');" }))
+                        {
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

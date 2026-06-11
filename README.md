@@ -1,12 +1,11 @@
-# Plan de Implementación
-## Solución de Puntuación de Exámenes Físicos (SPEF)
+# SPEF — Sistema Web de Corrección Automática de Exámenes Escritos (PDF)
 ### ASP.NET MVC · .NET Framework 4.8 · Google OAuth/Drive · Gemini Flash
 
 ---
 
 ## 1. Resumen Ejecutivo
 
-Se desarrollará una aplicación web en **ASP.NET MVC sobre .NET Framework 4.8** que automatiza la corrección de exámenes escritos a mano. El flujo real del docente es el siguiente:
+Aplicación web en **ASP.NET MVC sobre .NET Framework 4.8** que automatiza la corrección de exámenes escritos a mano. El flujo real del docente es el siguiente:
 
 1. El docente posee el **examen con respuestas correctas en PDF** (100% legible, es el documento base que usa para imprimir).
 2. Imprime ese mismo examen **sin las respuestas** y lo reparte a los estudiantes.
@@ -25,6 +24,8 @@ Se desarrollará una aplicación web en **ASP.NET MVC sobre .NET Framework 4.8**
 | Examen base | Siempre 100% legible (documento digital de origen) |
 | Examen del alumno | Enunciado impreso legible; **respuestas manuscritas** con caligrafía variable |
 | Apartados de examen | Un docente maneja múltiples exámenes base; cada lote de entregas se asocia a su examen base correspondiente |
+| Jerarquía académica | **Curso → Unidad → Tipo de Evaluación → Examen Base.** El docente crea el curso, dentro del curso sus unidades, y dentro de cada unidad el tipo de evaluación (examen teórico, parcial, etc.) al que pertenece el examen base |
+| Escala de calificación | **Configurable por examen base.** Por defecto, escala vigesimal peruana (0–20), pero el docente puede definir cualquier nota máxima (p. ej. 10, si el examen teórico vale la mitad y el práctico la otra mitad). El sistema normaliza los puntajes de las preguntas a la escala elegida |
 | Motor de IA | **Gemini Flash** (API REST, visión multimodal) |
 
 **Principio de diseño central:** ningún motor de reconocimiento de manuscrito es infalible. La robustez del sistema no proviene de un OCR perfecto, sino de la arquitectura: *evaluación con niveles de confianza + comparación semántica (no literal) + feedback explicativo + bandeja de revisión humana solo para casos dudosos*. El docente interviene por excepción (típicamente 5–10% de las respuestas), no revisa todo.
@@ -36,7 +37,8 @@ Se desarrollará una aplicación web en **ASP.NET MVC sobre .NET Framework 4.8**
 ### 2.1 Incluido (MVP)
 
 - Login con Google OAuth 2.0 y permiso de Google Drive del usuario.
-- Gestión de **Exámenes Base** (apartados): subir PDF con respuestas, calibración de la clave, activación.
+- Gestión de la **estructura académica**: Cursos → Unidades → Tipos de Evaluación.
+- Gestión de **Exámenes Base** dentro de cada tipo de evaluación: subir PDF con respuestas, definición de la **nota máxima** (vigesimal 0–20 por defecto, configurable: 10, 100, etc.), calibración de la clave, activación.
 - Subida de entregas de alumnos (individual o en lote: N archivos PDF = N alumnos).
 - Pipeline asíncrono de corrección: rasterización → evaluación con Gemini Flash → consolidación de nota.
 - **Sistema de feedback por respuesta**: transcripción, veredicto, justificación y nivel de confianza.
@@ -57,15 +59,16 @@ Se desarrollará una aplicación web en **ASP.NET MVC sobre .NET Framework 4.8**
 
 | Capa | Tecnología | Notas |
 |---|---|---|
-| Web | ASP.NET MVC 5, C#, .NET Framework 4.8, IIS | Requisito del proyecto |
-| Autenticación | Google OAuth 2.0 vía OWIN (`Microsoft.Owin.Security.Google`) | Scopes: `openid email profile` + `https://www.googleapis.com/auth/drive.file` |
-| Almacenamiento de archivos | Google Drive API v3 (`Google.Apis.Drive.v3`) | Compatible con .NET 4.8. Scope `drive.file` (solo archivos creados por la app) → verificación de Google más simple |
-| Base de datos | SQL Server + Entity Framework 6 | Persistencia de metadatos, claves, resultados |
-| Rasterización PDF | PDFium (PdfiumViewer) o Ghostscript | PDF → PNG **300 DPI** (calidad crítica para lectura de manuscrito) |
-| Extracción de texto de la clave | PdfPig o iText 7 | Texto nativo del PDF base (digital) — precisión total, sin OCR |
-| IA de evaluación | **Gemini Flash** vía API REST | Visión multimodal: transcribe y evalúa en un solo paso. Consumo con `HttpClient` (POST JSON + imagen base64), sin SDK necesario |
-| Jobs en background | Hangfire | Compatible con .NET 4.8. El procesamiento de un lote no puede vivir en un request HTTP |
-| Cifrado de tokens | DPAPI / `MachineKey` | El refresh token de Google se almacena cifrado |
+| Web | ASP.NET MVC 5, C#, .NET Framework 4.8, IIS | Requisito del proyecto. Solución `grpSPEF/grpSPEF.sln`, proyecto `pjtSPEF` |
+| Autenticación | Google OAuth 2.0 vía OWIN (`Microsoft.Owin.Security.Google`) | *Pendiente de credenciales.* Mientras tanto: **Forms Authentication en modo desarrollo** detrás de la interfaz `ICurrentUserService` (usuario `dev@spef.local`); migrar a OAuth no toca los controladores |
+| Almacenamiento de archivos | Google Drive API v3 (`Google.Apis.Drive.v3`) | *Pendiente de credenciales.* Mientras tanto: **disco local** (`App_Data/storage`) detrás de la interfaz `IFileStorageService`; el modelo usa una referencia genérica `archivo_ref` que mañana será el DriveFileId |
+| Base de datos | SQL Server + Entity Framework 6 | **La BD se crea con scripts manuales en `database/`** (ver §5); EF6 corre con initializer deshabilitado y mapeo explícito a tablas snake_case |
+| Validación de PDF | PdfPig 0.1.14 | Verifica que el archivo sea un PDF real y cuente ≤ 10 páginas |
+| Rasterización PDF | PDFium (PdfiumViewer) o Ghostscript | *Futuro.* PDF → imagen **300 DPI** (calidad crítica para lectura de manuscrito) |
+| Extracción de texto de la clave | PdfPig | *Futuro.* Texto nativo del PDF base (digital) — precisión total, sin OCR |
+| IA de evaluación | **Gemini Flash** vía API REST | *Futuro.* Visión multimodal: transcribe y evalúa en un solo paso. Usar `responseMimeType: application/json` + `responseSchema` para salida estructurada garantizada |
+| Jobs en background | Hangfire | *Futuro.* Compatible con .NET 4.8. Requiere configurar IIS con *Always Running* / sin idle timeout para que los lotes no mueran con el reciclaje del app pool |
+| Cifrado de tokens | DPAPI / `MachineKey` | *Futuro.* El refresh token de Google se almacenará cifrado |
 
 ---
 
@@ -75,48 +78,51 @@ Se desarrollará una aplicación web en **ASP.NET MVC sobre .NET Framework 4.8**
 [Navegador del docente]
         │
         ▼
-[ASP.NET MVC 5 + OWIN (Google OAuth)]
+[ASP.NET MVC 5 + Forms Auth dev (futuro: OWIN + Google OAuth)]
         │
-        ├── Capa de Servicios
-        │     ├── DriveStorageService      → Google Drive API (carpetas, subida, descarga)
-        │     ├── PdfTextService           → extrae texto nativo del examen base (PdfPig/iText)
-        │     ├── PdfRasterService         → PDF → PNG 300 DPI (máx. 10 páginas)
-        │     ├── ExamTemplateService      → estructura de la clave: preguntas, respuestas, puntajes
-        │     ├── GeminiGradingService     → llamadas REST a Gemini Flash (transcripción + evaluación + feedback)
-        │     └── ScoringService           → consolidación, umbrales de confianza, nota final
+        ├── Capa de Servicios (interfaces = costuras para las integraciones futuras)
+        │     ├── ICurrentUserService   → FormsCurrentUserService (futuro: claims de Google)
+        │     ├── IFileStorageService   → LocalFileStorageService (futuro: DriveStorageService)
+        │     ├── IPdfValidationService → PdfPigValidationService (PDF real, ≤10 páginas)
+        │     ├── PdfTextService        → (futuro) extrae texto nativo del examen base
+        │     ├── PdfRasterService      → (futuro) PDF → imagen 300 DPI
+        │     ├── GeminiGradingService  → (futuro) transcripción + evaluación + feedback
+        │     └── ScoringService        → (futuro) consolidación, umbrales, nota final
         │
-        ├── Hangfire
-        │     ├── ProcesarEntregaJob       → pipeline completo de 1 examen de alumno
-        │     └── ProcesarLoteJob          → encola N entregas
+        ├── Hangfire (futuro)
+        │     ├── ProcesarEntregaJob    → pipeline completo de 1 examen de alumno
+        │     └── ProcesarLoteJob       → encola N entregas
         │
-        └── EF6 → SQL Server
+        └── EF6 → SQL Server (BD creada por scripts en database/)
 ```
 
-**Estructura de carpetas en Drive (autogenerada):**
+**Estructura de almacenamiento (hoy local en `App_Data/storage`, futuro espejo en Drive):**
 
 ```
-/CorreccionExamenes/
-   └── {Curso}/
-        └── {ExamenBase}/
-             ├── clave/        ← PDF con respuestas
-             └── entregas/     ← 1 PDF por alumno
+storage/
+   └── examenes-base/{guid}.pdf      ← PDF clave de cada examen base
+   └── entregas/{guid}.pdf           ← (futuro) 1 PDF por alumno
 ```
 
 ---
 
 ## 5. Modelo de Datos (núcleo)
 
-| Entidad | Campos principales |
-|---|---|
-| `Usuarios` | GoogleId, email, nombre, refresh_token (cifrado) |
-| `Cursos` | nombre, docente (FK Usuario) |
-| `ExamenesBase` | curso (FK), título, DriveFileId de la clave, total de páginas (≤10), estado: *Borrador → Calibrado → Activo* |
-| `PreguntasClave` | examen base (FK), número, enunciado, respuesta correcta, tipo (*opción múltiple / respuesta corta / desarrollo*), puntaje, página, criterios de puntaje parcial (opcional) |
-| `EntregasAlumno` | examen base (FK), nombre/código del alumno, DriveFileId, estado: *En cola → Procesando → Calificado / Requiere revisión / Error*, nota final, fecha |
-| `RespuestasEvaluadas` | entrega (FK), pregunta (FK), transcripción, veredicto (*correcta / parcial / incorrecta / ilegible*), puntaje sugerido, puntaje final, confianza_lectura (0–1), confianza_evaluación (0–1), **feedback** (texto explicativo), requiere_revisión (bool), revisado_por, fecha_revisión |
-| `LogProcesamiento` | entrega (FK), etapa, resultado, duración, error si aplica |
+> La base de datos se crea ejecutando **`database/script.sql`** (consolidado, idempotente: crea la BD `SPEF` completa de una vez). Los scripts por objeto están en `database/tables/` y `database/seed/`, numerados en orden de ejecución. Cada incremento añade sus scripts y regenera el consolidado.
 
-> Nota de diseño: la identificación del alumno puede capturarse de dos formas: (a) el docente la escribe al subir el PDF, o (b) Gemini transcribe el nombre manuscrito de la cabecera del examen y el docente solo lo confirma. Implementar (a) en el MVP y (b) como mejora.
+| Entidad | Campos principales | Estado |
+|---|---|---|
+| `usuarios` | google_id (NULL hasta OAuth), email, nombre, refresh_token (NULL hasta OAuth, cifrado), activo | ✅ Creada |
+| `cursos` | nombre, periodo, docente (FK usuario) | ✅ Creada |
+| `unidades` | curso (FK, cascade), número, nombre — UNIQUE(curso, número) | ✅ Creada |
+| `tipos_evaluacion` | unidad (FK, cascade), nombre (p. ej. "Examen teórico", "Práctica calificada") | ✅ Creada |
+| `examenes_base` | tipo de evaluación (FK, cascade), título, **archivo_ref** (genérico: ruta local hoy, DriveFileId mañana), archivo_nombre_original, total_paginas (CHECK 1–10), **nota_maxima** (DECIMAL, default 20, CHECK > 0), estado: *Borrador → Calibrado → Activo* | ✅ Creada |
+| `preguntas_clave` | examen base (FK), número, enunciado, respuesta correcta, tipo, puntaje (suma = nota_maxima), página, criterios de puntaje parcial | ⏳ Próximo incremento |
+| `entregas_alumno` | examen base (FK), alumno, archivo_ref, estado del procesamiento, nota final | ⏳ Próximo incremento |
+| `respuestas_evaluadas` | entrega (FK), pregunta (FK), transcripción, veredicto, puntajes, confianzas, **feedback**, requiere_revisión | ⏳ Próximo incremento |
+| `log_procesamiento` | entrega (FK), etapa, resultado, duración, error | ⏳ Próximo incremento |
+
+> Nota de diseño: la identificación del alumno puede capturarse de dos formas: (a) el docente la escribe al subir el PDF, o (b) Gemini transcribe el nombre manuscrito de la cabecera del examen y el docente solo lo confirma. Implementar (a) primero y (b) como mejora.
 
 ---
 
@@ -124,22 +130,23 @@ Se desarrollará una aplicación web en **ASP.NET MVC sobre .NET Framework 4.8**
 
 ### 6.1 Calibración del examen base (una vez por apartado)
 
-1. Docente sube el PDF con respuestas → se guarda en Drive (`/clave/`).
-2. `PdfTextService` extrae el texto nativo (el PDF es digital, precisión total).
-3. Una llamada a Gemini Flash con el texto completo estructura la clave: lista de preguntas con `{numero, enunciado, respuesta_correcta, puntaje_sugerido, tipo, pagina}` en JSON.
-4. **Vista de confirmación**: el docente revisa la lista extraída, corrige enunciados/respuestas/puntajes si hace falta, define el puntaje real de cada pregunta y los criterios de puntaje parcial si los hay.
-5. El examen pasa a estado **Activo** y queda listo para recibir entregas.
+1. Docente sube el PDF con respuestas dentro del tipo de evaluación correspondiente (Curso → Unidad → Tipo de Evaluación). ✅ *Implementado*
+2. Define la **nota máxima del examen**: por defecto 20 (escala vigesimal), modificable a cualquier valor (10, 100, etc.). ✅ *Implementado*
+3. `PdfTextService` extrae el texto nativo (el PDF es digital, precisión total). ⏳
+4. Una llamada a Gemini Flash con el texto completo estructura la clave: lista de preguntas con `{numero, enunciado, respuesta_correcta, puntaje_sugerido, tipo, pagina}` en JSON. El sistema propone una distribución de puntajes proporcional a la nota máxima definida. ⏳
+5. **Vista de confirmación**: el docente revisa la lista extraída, corrige enunciados/respuestas/puntajes si hace falta, ajusta el puntaje real de cada pregunta y los criterios de puntaje parcial si los hay. **Validación obligatoria: la suma de puntajes de las preguntas debe igualar la nota máxima** (el sistema lo muestra en tiempo real, p. ej. "18.0 / 20.0 asignados"). ⏳
+6. El examen pasa a estado **Activo** y queda listo para recibir entregas. ⏳
 
 > Esta vista de confirmación es la garantía de calidad de la mitad del problema: la clave queda validada por el humano antes de calificar a nadie.
 
-### 6.2 Procesamiento de cada entrega (job Hangfire)
+### 6.2 Procesamiento de cada entrega (job Hangfire) ⏳
 
 1. **Validación de entrada**: PDF ≤ 10 páginas, resolución suficiente (advertir si el escaneo es < 200 DPI efectivos).
-2. **Rasterización**: cada página → PNG 300 DPI.
-3. **Evaluación con Gemini Flash**, página por página (o varias páginas por llamada). El prompt incluye:
-   - Las preguntas de esa página con su enunciado, respuesta correcta, puntaje y criterios (texto ya validado de la clave).
-   - La imagen de la página del alumno.
-   - Instrucción de responder **únicamente JSON estricto**.
+2. **Rasterización**: cada página → imagen 300 DPI (JPEG calidad ~85: PNG a 300 DPI puede exceder el límite de ~20 MB por request de Gemini).
+3. **Evaluación con Gemini Flash** enviando **todas las páginas del examen en una sola llamada** con la clave completa (≤10 páginas lo permite y evita el problema de respuestas que continúan en otra página). El prompt incluye:
+   - Las preguntas con su enunciado, respuesta correcta, puntaje y criterios (texto ya validado de la clave).
+   - Las imágenes de las páginas del alumno.
+   - `responseSchema` JSON para salida estructurada garantizada.
 4. **Consolidación** (`ScoringService`): suma de puntajes, aplicación de umbrales de confianza, marcado de respuestas para revisión.
 5. **Resultado**: nota preliminar inmediata + detalle por pregunta con feedback.
 
@@ -176,7 +183,8 @@ Este es el corazón de la flexibilidad solicitada. La comparación **nunca es li
 
 - `confianza_lectura ≥ 0.85` **y** `confianza_evaluacion ≥ 0.85` → puntaje automático.
 - Cualquiera de las dos por debajo del umbral → **bandeja de revisión**: el docente ve la imagen de la respuesta, la transcripción, el feedback de la IA y aprueba/corrige el puntaje en un clic.
-- Preguntas de tipo *desarrollo largo* → siempre pasan por revisión en el MVP (auto-calificación solo para opción múltiple y respuesta corta al inicio; se relaja según resultados del piloto).
+- Preguntas de tipo *desarrollo largo* → siempre pasan por revisión al inicio (auto-calificación solo para opción múltiple y respuesta corta; se relaja según resultados del piloto).
+- Importante: las confianzas auto-reportadas por LLMs tienden a agruparse alto (0.9+) aunque se equivoquen; los umbrales deben **calibrarse con datos reales desde las primeras pruebas**, no asumirse.
 
 El **feedback se conserva siempre**, incluso en respuestas auto-calificadas: es el registro de *por qué* el sistema asignó ese puntaje, sirve como justificación ante reclamos de estudiantes y es evidencia documental para la validación del sistema.
 
@@ -213,72 +221,23 @@ INSTRUCCIONES:
 
 ---
 
-## 7. Fases de Implementación (≈ 14 semanas)
-
-### Fase 0 — Setup (Semana 1)
-- Proyecto ASP.NET MVC 5 (.NET 4.8), repositorio Git, estructura de capas.
-- Google Cloud Console: proyecto, pantalla de consentimiento OAuth, credenciales, habilitar Drive API; cuenta y API key de Gemini.
-- SQL Server + EF6 (migraciones), instalación de Hangfire.
-- **Entregable:** proyecto base desplegable con CI básico.
-
-### Fase 1 — Autenticación y Drive (Semanas 2–3)
-- Login con Google OAuth (OWIN), captura y cifrado del refresh token.
-- `DriveStorageService`: creación de estructura de carpetas, subida/descarga, manejo de renovación de tokens.
-- CRUD de Cursos y Exámenes Base (apartados).
-- **Entregable:** el docente inicia sesión y sube PDFs que quedan organizados en su Drive desde la app.
-
-### Fase 2 — Calibración del examen base (Semanas 4–5)
-- Extracción de texto nativo del PDF clave (PdfPig/iText).
-- Estructuración de la clave con Gemini (preguntas/respuestas/puntajes en JSON).
-- **Vista de confirmación/edición de la clave** (la pieza de UX más importante de esta fase).
-- Estados del examen: Borrador → Calibrado → Activo.
-- **Entregable:** examen base calibrado y validado por el docente, listo para recibir entregas.
-
-### Fase 3 — Pipeline de corrección (Semanas 6–8) ⚠️ *Fase crítica*
-- Subida de entregas (individual y lote; validación ≤ 10 páginas y calidad de escaneo).
-- `PdfRasterService` (300 DPI) + `GeminiGradingService` (REST, reintentos, rate limiting) + `ScoringService` (umbrales, consolidación).
-- Jobs Hangfire con estados visibles en UI y log por etapa.
-- Preprocesamiento básico de imagen: enderezado (deskew) si la rotación es notoria, ajuste de contraste.
-- **Entregable:** entra un PDF escaneado → sale nota preliminar con feedback por pregunta.
-
-### Fase 4 — Bandeja de revisión, feedback y publicación (Semanas 9–10)
-- Bandeja de revisión: imagen de la respuesta + transcripción + feedback de la IA lado a lado; el docente aprueba o corrige puntaje en un clic.
-- Vista de detalle de cada entrega: nota, desglose por pregunta, feedback completo.
-- Publicación de notas, exportación a Excel y PDF.
-- Reporte analítico por pregunta (qué preguntas falló más el grupo).
-- **Entregable:** ciclo completo cerrado de corrección con supervisión por excepción.
-
-### Fase 5 — Endurecimiento (Semanas 11–12)
-- Manejo de escaneos deficientes (oscuros, torcidos, baja resolución): validaciones, advertencias al docente, guía de escaneo.
-- Telemetría de precisión: % de respuestas auto-calificadas vs. enviadas a revisión, distribución de confianzas, costo por examen.
-- Pruebas con exámenes reales de distintos cursos y caligrafías.
-- Seguridad: revisión de cifrado de tokens, autorización por recurso, manejo de errores de API.
-- **Entregable:** sistema estable bajo condiciones reales adversas.
-
-### Fase 6 — Piloto y validación (Semanas 13–14)
-- Corrida en paralelo: el sistema califica un lote real y el docente califica el mismo lote a mano.
-- Medición de **concordancia** (precisión del sistema vs. corrección humana), % de intervención manual, tiempo ahorrado, costo por examen.
-- Ajuste fino de umbrales de confianza con datos reales.
-- **Entregable:** métricas cuantitativas de validación (insumo directo para la documentación/sustentación del proyecto).
-
----
-
-## 8. Riesgos y Mitigaciones
+## 7. Riesgos y Mitigaciones
 
 | # | Riesgo | Impacto | Mitigación |
 |---|---|---|---|
 | 1 | **Calidad del escaneo** (el riesgo #1, mayor que la caligrafía: a baja resolución todo motor falla) | Alto | Validar resolución al subir, advertencias inmediatas, guía de escaneo para el docente, preprocesamiento (deskew, contraste) |
 | 2 | Caligrafía extremadamente difícil | Medio | Diseñado en la arquitectura: confianza baja → revisión humana con feedback explicativo. El sistema nunca "adivina en silencio" |
-| 3 | Respuestas de desarrollo largo | Medio | Siempre a revisión en el MVP; el feedback de la IA acelera la decisión del docente. Auto-calificación gradual según resultados del piloto |
+| 3 | Respuestas de desarrollo largo | Medio | Siempre a revisión al inicio; el feedback de la IA acelera la decisión del docente. Auto-calificación gradual según resultados del piloto |
 | 4 | Verificación OAuth de Google | Medio | Scope `drive.file` (restringido) en lugar del scope completo de Drive → proceso de verificación leve, sin auditoría costosa |
 | 5 | Cambios/límites de la API de Gemini | Medio | Capa `GeminiGradingService` aislada tras interfaz → el motor es intercambiable. Reintentos con backoff y rate limiting |
 | 6 | Costos de API | Bajo | Gemini Flash cuesta centavos por examen de 10 páginas. Registrar costo por examen como métrica del piloto |
-| 7 | Examen base mal estructurado (numeración irregular, formato atípico) | Medio | La vista de confirmación de la Fase 2 obliga validación humana de la clave antes de activar el examen |
+| 7 | Examen base mal estructurado (numeración irregular, formato atípico) | Medio | La vista de confirmación de la calibración obliga validación humana de la clave antes de activar el examen |
 | 8 | Alucinación del modelo (transcribir algo que no está) | Medio | Prompt conservador (instrucción explícita de reportar baja confianza ante ambigüedad), umbrales estrictos al inicio, feedback siempre auditable junto a la imagen original |
+| 9 | Hangfire sobre IIS: reciclaje del app pool mata los jobs | Medio | Configurar el app pool con *Always Running*, deshabilitar idle timeout y habilitar auto-start del sitio |
 
 ---
 
-## 9. Métricas de Éxito (para el piloto)
+## 8. Métricas de Éxito (para el piloto)
 
 - **Concordancia** con la corrección manual del docente (objetivo: ≥ 90% en respuesta corta y opción múltiple).
 - **% de auto-calificación** (objetivo: ≥ 85% de respuestas sin intervención manual).
@@ -288,7 +247,7 @@ INSTRUCCIONES:
 
 ---
 
-## 10. Decisiones de Diseño Deliberadas (qué NO se hará y por qué)
+## 9. Decisiones de Diseño Deliberadas (qué NO se hará y por qué)
 
 1. **No entrenar un modelo propio de HTR/OCR**: meses de trabajo, dataset enorme requerido y resultado inferior a los modelos multimodales actuales.
 2. **No comparar respuestas por matching de strings ni distancia Levenshtein** como criterio principal: se rompe con sinónimos, paráfrasis y errores ortográficos. La equivalencia semántica vía LLM es el mecanismo central.
@@ -298,4 +257,36 @@ INSTRUCCIONES:
 
 ---
 
-*Fin del plan de implementación.*
+## 10. Estado de Avance
+
+### Cómo correr el proyecto
+
+1. Ejecutar `database/script.sql` (SSMS, o `sqlcmd -S "(localdb)\MSSQLLocalDB" -i database\script.sql -b -I`). Crea la BD `SPEF` completa; es idempotente.
+2. Si no se usa LocalDB, ajustar el connection string `SpefDb` en `grpSPEF/pjtSPEF/Web.config`.
+3. Abrir `grpSPEF/grpSPEF.sln` en Visual Studio 2022 y ejecutar (F5), o compilar con MSBuild y servir con IIS Express.
+4. Entrar con el botón **"Entrar (modo desarrollo)"** (usuario `dev@spef.local`, sin contraseña — auth simulada hasta tener credenciales de Google).
+
+### Implementado hasta hoy
+
+- ✅ Estructura del proyecto (MVC 5, .NET 4.8) con capas: `Models/Entities`, `Models/ViewModels`, `Data` (EF6 + mapeos snake_case), `Services` (interfaces + implementaciones).
+- ✅ Esquema SQL inicial en `database/`: usuarios, cursos, unidades, tipos_evaluacion, examenes_base (+ seed del usuario dev).
+- ✅ Autenticación de desarrollo (Forms Auth) detrás de `ICurrentUserService`; toda la app exige sesión (`AuthorizeAttribute` global) y autoriza **por recurso** (cada consulta navega hasta el dueño).
+- ✅ CRUD jerárquico completo con navegación drill-down y breadcrumbs: Cursos → Unidades → Tipos de Evaluación → Exámenes Base.
+- ✅ Subida de PDF del examen base con validación real (magic bytes + conteo de páginas ≤ 10 con PdfPig), almacenamiento local tras `IFileStorageService`, descarga, reemplazo y borrado con limpieza de archivos (incluida la cascada al borrar curso/unidad/tipo).
+- ✅ Nota máxima configurable por examen (default 20) y estados Borrador/Calibrado/Activo (por ahora todo queda en Borrador).
+
+### Pendiente (próximos incrementos)
+
+- ⏳ Calibración de la clave: extracción de texto (PdfPig) + estructuración con Gemini + vista de confirmación/edición de preguntas y puntajes.
+- ⏳ Entregas de alumnos, pipeline de corrección (Hangfire + rasterización + Gemini), bandeja de revisión, reportes.
+- ⏳ Integraciones reales: Google OAuth (OWIN), Google Drive, API key de Gemini.
+
+### Registro de cambios
+
+| Fecha | Incremento | Cambios |
+|---|---|---|
+| 2026-06-11 | 1 | Plantilla limpia y rebrandeada, `.gitignore`, esquema SQL inicial (`database/`), EF6 + PdfPig instalados, auth dev (Forms) tras `ICurrentUserService`, CRUD jerárquico Cursos→Unidades→Tipos→Exámenes con subida/validación/descarga de PDF |
+
+---
+
+*Documento de diseño vivo: se actualiza con cada incremento.*

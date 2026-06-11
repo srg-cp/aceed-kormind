@@ -1,0 +1,77 @@
+@model pjtSPEF.Models.Entities.ExamenBase
+@{
+    ViewBag.Title = Model.Titulo;
+}
+
+@Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
+{
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.TipoEvaluacion.Unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = Model.TipoEvaluacion.Unidad.CursoId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + Model.TipoEvaluacion.Unidad.Numero, Url.Action("Details", "Unidades", new { id = Model.TipoEvaluacion.UnidadId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.TipoEvaluacion.Nombre, Url.Action("Details", "TiposEvaluacion", new { id = Model.TipoEvaluacionId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.Titulo)
+})
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">@Model.Titulo</h2>
+    <div>
+        <a href="@Url.Action("Edit", new { id = Model.Id })" class="btn btn-outline-secondary">Editar</a>
+        @if (!string.IsNullOrEmpty(Model.ArchivoRef))
+        {
+            <a href="@Url.Action("Descargar", new { id = Model.Id })" class="btn btn-outline-primary">Descargar PDF</a>
+        }
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <table class="table">
+            <tr>
+                <th style="width: 12rem">Estado</th>
+                <td>
+                    @switch (Model.Estado)
+                    {
+                        case pjtSPEF.Models.Entities.EstadoExamen.Borrador:
+                            <span class="badge bg-secondary">Borrador</span>
+                            <span class="text-muted small">— pendiente de calibrar la clave</span>
+                            break;
+                        case pjtSPEF.Models.Entities.EstadoExamen.Calibrado:
+                            <span class="badge bg-info">Calibrado</span>
+                            break;
+                        case pjtSPEF.Models.Entities.EstadoExamen.Activo:
+                            <span class="badge bg-success">Activo</span>
+                            break;
+                    }
+                </td>
+            </tr>
+            <tr>
+                <th>Nota máxima</th>
+                <td>@Model.NotaMaxima.ToString("0.##")</td>
+            </tr>
+            <tr>
+                <th>Archivo</th>
+                <td>@(Model.ArchivoNombreOriginal ?? "—")</td>
+            </tr>
+            <tr>
+                <th>Páginas</th>
+                <td>@(Model.TotalPaginas.HasValue ? Model.TotalPaginas.ToString() : "—")</td>
+            </tr>
+            <tr>
+                <th>Creado</th>
+                <td>@Model.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+            </tr>
+            @if (Model.FechaModificacion.HasValue)
+            {
+                <tr>
+                    <th>Última modificación</th>
+                    <td>@Model.FechaModificacion.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                </tr>
+            }
+        </table>
+
+        <div class="alert alert-light border">
+            La <strong>calibración de la clave</strong> (extraer preguntas, respuestas y puntajes del PDF)
+            llegará en el siguiente incremento. Por ahora el examen queda en estado Borrador.
+        </div>
+    </div>
+</div>

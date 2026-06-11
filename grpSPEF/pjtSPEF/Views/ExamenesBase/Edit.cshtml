@@ -1,0 +1,54 @@
+@model pjtSPEF.Models.ViewModels.ExamenBaseFormViewModel
+@{
+    ViewBag.Title = "Editar examen base";
+    var examen = (pjtSPEF.Models.Entities.ExamenBase)ViewBag.Examen;
+}
+
+@Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
+{
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = examen.TipoEvaluacion.Unidad.CursoId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + examen.TipoEvaluacion.Unidad.Numero, Url.Action("Details", "Unidades", new { id = examen.TipoEvaluacion.UnidadId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Nombre, Url.Action("Details", "TiposEvaluacion", new { id = examen.TipoEvaluacionId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.Titulo, Url.Action("Details", new { id = examen.Id })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Editar")
+})
+
+<h2>Editar examen base</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        @using (Html.BeginForm("Edit", "ExamenesBase", FormMethod.Post, new { enctype = "multipart/form-data" }))
+        {
+            @Html.AntiForgeryToken()
+            @Html.ValidationSummary(true, "", new { @class = "text-danger" })
+
+            <div class="mb-3">
+                @Html.LabelFor(m => m.Titulo, new { @class = "form-label" })
+                @Html.TextBoxFor(m => m.Titulo, new { @class = "form-control" })
+                @Html.ValidationMessageFor(m => m.Titulo, "", new { @class = "text-danger" })
+            </div>
+            <div class="mb-3">
+                @Html.LabelFor(m => m.NotaMaxima, new { @class = "form-label" })
+                @Html.TextBoxFor(m => m.NotaMaxima, new { @class = "form-control", type = "number", step = "0.5", min = "0.5" })
+                @Html.ValidationMessageFor(m => m.NotaMaxima, "", new { @class = "text-danger" })
+            </div>
+            <div class="mb-3">
+                @Html.LabelFor(m => m.ArchivoPdf, new { @class = "form-label" })
+                <input type="file" name="ArchivoPdf" id="ArchivoPdf" class="form-control" accept="application/pdf" />
+                <div class="form-text">
+                    Opcional: si subes un PDF nuevo, reemplaza al actual
+                    (@(examen.ArchivoNombreOriginal ?? "sin archivo")).
+                </div>
+                @Html.ValidationMessageFor(m => m.ArchivoPdf, "", new { @class = "text-danger" })
+            </div>
+
+            <button type="submit" class="btn btn-primary">Guardar cambios</button>
+            <a href="@Url.Action("Details", new { id = examen.Id })" class="btn btn-outline-secondary">Cancelar</a>
+        }
+    </div>
+</div>
+
+@section scripts {
+    @Scripts.Render("~/bundles/jqueryval")
+}
