@@ -52,16 +52,50 @@
     <Reference Include="EntityFramework.SqlServer, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
       <HintPath>..\packages\EntityFramework.6.5.2\lib\net45\EntityFramework.SqlServer.dll</HintPath>
     </Reference>
+    <Reference Include="Google.Apis, Version=1.74.0.0, Culture=neutral, PublicKeyToken=4b01fa6e34db77ab, processorArchitecture=MSIL">
+      <HintPath>..\packages\Google.Apis.1.74.0\lib\net462\Google.Apis.dll</HintPath>
+    </Reference>
+    <Reference Include="Google.Apis.Auth, Version=1.74.0.0, Culture=neutral, PublicKeyToken=4b01fa6e34db77ab, processorArchitecture=MSIL">
+      <HintPath>..\packages\Google.Apis.Auth.1.74.0\lib\net462\Google.Apis.Auth.dll</HintPath>
+    </Reference>
+    <Reference Include="Google.Apis.Core, Version=1.74.0.0, Culture=neutral, PublicKeyToken=4b01fa6e34db77ab, processorArchitecture=MSIL">
+      <HintPath>..\packages\Google.Apis.Core.1.74.0\lib\net462\Google.Apis.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="Google.Apis.Drive.v3, Version=1.74.0.4135, Culture=neutral, PublicKeyToken=4b01fa6e34db77ab, processorArchitecture=MSIL">
+      <HintPath>..\packages\Google.Apis.Drive.v3.1.74.0.4135\lib\net462\Google.Apis.Drive.v3.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.Bcl.HashCode, Version=6.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.Bcl.HashCode.6.0.0\lib\net462\Microsoft.Bcl.HashCode.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="Microsoft.Owin, Version=4.2.3.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.Owin.4.2.3\lib\net45\Microsoft.Owin.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Owin.Host.SystemWeb, Version=4.2.3.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.Owin.Host.SystemWeb.4.2.3\lib\net45\Microsoft.Owin.Host.SystemWeb.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Owin.Security, Version=4.2.3.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.Owin.Security.4.2.3\lib\net45\Microsoft.Owin.Security.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Owin.Security.Cookies, Version=4.2.3.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.Owin.Security.Cookies.4.2.3\lib\net45\Microsoft.Owin.Security.Cookies.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Owin.Security.Google, Version=4.2.3.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.Owin.Security.Google.4.2.3\lib\net45\Microsoft.Owin.Security.Google.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Owin, Version=1.0.0.0, Culture=neutral, PublicKeyToken=f0ebd12fd5e55cc5, processorArchitecture=MSIL">
+      <HintPath>..\packages\Owin.1.0\lib\net40\Owin.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Buffers, Version=4.0.4.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Buffers.4.6.0\lib\net462\System.Buffers.dll</HintPath>
     </Reference>
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Management" />
     <Reference Include="System.Memory, Version=4.0.2.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Memory.4.6.0\lib\net462\System.Memory.dll</HintPath>
     </Reference>
@@ -72,6 +106,7 @@
     <Reference Include="System.Runtime.CompilerServices.Unsafe, Version=6.0.1.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Runtime.CompilerServices.Unsafe.6.1.0\lib\net462\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
     </Reference>
+    <Reference Include="System.Security" />
     <Reference Include="System.Web.DynamicData" />
     <Reference Include="System.Web.Entity" />
     <Reference Include="System.Web.ApplicationServices" />
@@ -122,9 +157,6 @@
       <Private>True</Private>
       <HintPath>..\packages\Microsoft.AspNet.WebPages.3.2.9\lib\net45\System.Web.WebPages.Razor.dll</HintPath>
     </Reference>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>..\packages\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
-    </Reference>
     <Reference Include="UglyToad.PdfPig, Version=0.1.14.0, Culture=neutral, PublicKeyToken=605d367334e74123, processorArchitecture=MSIL">
       <HintPath>..\packages\PdfPig.0.1.14\lib\net471\UglyToad.PdfPig.dll</HintPath>
     </Reference>
@@ -165,13 +197,18 @@
     <Compile Include="App_Start\FilterConfig.cs" />
     <Compile Include="App_Start\RouteConfig.cs" />
     <Compile Include="Controllers\AccountController.cs" />
+    <Compile Include="Controllers\CalibracionController.cs" />
     <Compile Include="Controllers\CursosController.cs" />
+    <Compile Include="Controllers\EvaluacionesController.cs" />
     <Compile Include="Controllers\ExamenesBaseController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\TiposEvaluacionController.cs" />
     <Compile Include="Controllers\UnidadesController.cs" />
     <Compile Include="Data\Mappings\CursoMap.cs" />
+    <Compile Include="Data\Mappings\EvaluacionEstudianteMap.cs" />
     <Compile Include="Data\Mappings\ExamenBaseMap.cs" />
+    <Compile Include="Data\Mappings\PreguntaClaveMap.cs" />
+    <Compile Include="Data\Mappings\RespuestaEstudianteMap.cs" />
     <Compile Include="Data\Mappings\TipoEvaluacionMap.cs" />
     <Compile Include="Data\Mappings\UnidadMap.cs" />
     <Compile Include="Data\Mappings\UsuarioMap.cs" />
@@ -180,23 +217,36 @@
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
     <Compile Include="Models\Entities\Curso.cs" />
+    <Compile Include="Models\Entities\EstadoEvaluacion.cs" />
     <Compile Include="Models\Entities\EstadoExamen.cs" />
+    <Compile Include="Models\Entities\EvaluacionEstudiante.cs" />
     <Compile Include="Models\Entities\ExamenBase.cs" />
+    <Compile Include="Models\Entities\PreguntaClave.cs" />
+    <Compile Include="Models\Entities\RespuestaEstudiante.cs" />
     <Compile Include="Models\Entities\TipoEvaluacion.cs" />
     <Compile Include="Models\Entities\Unidad.cs" />
     <Compile Include="Models\Entities\Usuario.cs" />
     <Compile Include="Models\ViewModels\BreadcrumbItem.cs" />
+    <Compile Include="Models\ViewModels\CalibracionViewModel.cs" />
     <Compile Include="Models\ViewModels\CursoFormViewModel.cs" />
     <Compile Include="Models\ViewModels\ExamenBaseFormViewModel.cs" />
+    <Compile Include="Models\ViewModels\SubirEvaluacionesViewModel.cs" />
     <Compile Include="Models\ViewModels\TipoEvaluacionFormViewModel.cs" />
     <Compile Include="Models\ViewModels\UnidadFormViewModel.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Services\FormsCurrentUserService.cs" />
-    <Compile Include="Services\ICurrentUserService.cs" />
-    <Compile Include="Services\IFileStorageService.cs" />
-    <Compile Include="Services\IPdfValidationService.cs" />
-    <Compile Include="Services\LocalFileStorageService.cs" />
+    <Compile Include="Services\ClaudeCalificadorService.cs" />
+    <Compile Include="Services\DriveNoAutorizadoException.cs" />
+    <Compile Include="Services\DriveStorageService.cs" />
+    <Compile Include="Services\GeminiCalificadorService.cs" />
+    <Compile Include="Services\GeminiExtractorClaveService.cs" />
+    <Compile Include="Services\GoogleCurrentUserService.cs" />
+    <Compile Include="Services\ICalificadorService.cs" />
     <Compile Include="Services\PdfPigValidationService.cs" />
+    <Compile Include="Services\ProveedorIa.cs" />
+    <Compile Include="Services\RutaStorage.cs" />
+    <Compile Include="Services\TokenProtector.cs" />
+    <Compile Include="Security\AuthClaims.cs" />
+    <Compile Include="Startup.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Content\bootstrap-grid.css" />
@@ -235,6 +285,8 @@
     <Content Include="Scripts\jquery.validate.unobtrusive.js" />
     <Content Include="Scripts\jquery.validate.unobtrusive.min.js" />
     <Content Include="Scripts\modernizr-2.8.3.js" />
+    <Content Include="Secrets.config.example" />
+    <Content Include="Secrets.config" />
     <Content Include="Web.config" />
     <Content Include="Web.Debug.config">
       <DependentUpon>Web.config</DependentUpon>
@@ -260,6 +312,10 @@
     <Content Include="Views\TiposEvaluacion\Create.cshtml" />
     <Content Include="Views\TiposEvaluacion\Edit.cshtml" />
     <Content Include="Views\TiposEvaluacion\Details.cshtml" />
+    <Content Include="Views\Calibracion\Calibrar.cshtml" />
+    <Content Include="Views\Evaluaciones\Index.cshtml" />
+    <Content Include="Views\Evaluaciones\Subir.cshtml" />
+    <Content Include="Views\Evaluaciones\Details.cshtml" />
     <Content Include="Views\ExamenesBase\Create.cshtml" />
     <Content Include="Views\ExamenesBase\Edit.cshtml" />
     <Content Include="Views\ExamenesBase\Details.cshtml" />

@@ -14,6 +14,9 @@ packages/
 *.nupkg
 nuget.exe
 
+# Secretos (claves de Gemini / Google OAuth) — usar Secrets.config.example como plantilla
+Secrets.config
+
 # Datos locales de la aplicación
 grpSPEF/pjtSPEF/App_Data/storage/
 *.mdf

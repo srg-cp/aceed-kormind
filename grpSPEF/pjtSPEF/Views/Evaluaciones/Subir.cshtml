@@ -1,0 +1,107 @@
+@model pjtSPEF.Models.ViewModels.SubirEvaluacionesViewModel
+@{
+    ViewBag.Title = "Subir entregas";
+    var examen = (pjtSPEF.Models.Entities.ExamenBase)ViewBag.Examen;
+}
+
+@Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
+{
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = examen.TipoEvaluacion.Unidad.CursoId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + examen.TipoEvaluacion.Unidad.Numero, Url.Action("Details", "Unidades", new { id = examen.TipoEvaluacion.UnidadId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Nombre, Url.Action("Details", "TiposEvaluacion", new { id = examen.TipoEvaluacionId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.Titulo, Url.Action("Details", "ExamenesBase", new { id = examen.Id })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Entregas", Url.Action("Index", new { examenBaseId = examen.Id })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Subir")
+})
+
+<h2 class="mb-3">Subir entregas — @examen.Titulo</h2>
+
+@Html.ValidationSummary(false, "", new { @class = "text-danger" })
+
+<p class="text-muted">
+    Arrastra uno o varios PDFs (cada uno la entrega resuelta de un estudiante, máx. 10 páginas)
+    o haz clic para elegirlos. El nombre del archivo se usa como nombre inicial del estudiante.
+    Las entregas quedan como <em>pendientes</em>; luego las calificas con IA desde cada entrega.
+</p>
+
+@using (Html.BeginForm("Subir", "Evaluaciones", FormMethod.Post, new { enctype = "multipart/form-data" }))
+{
+    @Html.AntiForgeryToken()
+    @Html.HiddenFor(m => m.ExamenBaseId)
+
+    <div id="dropzone" class="border border-2 border-secondary-subtle rounded-3 text-center p-5 mb-3"
+         style="border-style: dashed !important; cursor: pointer; background-color: #f8f9fa;">
+        <div class="fs-1 mb-2">📄</div>
+        <div class="fw-semibold">Arrastra aquí los PDFs</div>
+        <div class="text-muted small">o haz clic para seleccionarlos</div>
+        <input type="file" id="Archivos" name="Archivos" accept="application/pdf" multiple required
+               class="d-none" />
+    </div>
+
+    <ul id="lista-archivos" class="list-group mb-3 d-none"></ul>
+
+    <button type="submit" class="btn btn-success" id="btn-subir">Subir</button>
+    <a href="@Url.Action("Index", new { examenBaseId = examen.Id })" class="btn btn-outline-secondary">Cancelar</a>
+}
+
+@section scripts {
+    <script>
+        (function () {
+            var dropzone = document.getElementById('dropzone');
+            var input = document.getElementById('Archivos');
+            var lista = document.getElementById('lista-archivos');
+            var form = document.querySelector('form');
+
+            // Abrir el selector al hacer clic en la zona.
+            dropzone.addEventListener('click', function () { input.click(); });
+
+            // Soltar archivos: se asignan al input para que viajen con el form.
+            ['dragenter', 'dragover'].forEach(function (ev) {
+                dropzone.addEventListener(ev, function (e) {
+                    e.preventDefault();
+                    dropzone.classList.add('border-success');
+                });
+            });
+            ['dragleave', 'drop'].forEach(function (ev) {
+                dropzone.addEventListener(ev, function (e) {
+                    e.preventDefault();
+                    dropzone.classList.remove('border-success');
+                });
+            });
+            dropzone.addEventListener('drop', function (e) {
+                input.files = e.dataTransfer.files;
+                mostrarArchivos();
+            });
+
+            input.addEventListener('change', mostrarArchivos);
+
+            function mostrarArchivos() {
+                lista.innerHTML = '';
+                if (!input.files || input.files.length === 0) {
+                    lista.classList.add('d-none');
+                    return;
+                }
+                lista.classList.remove('d-none');
+                for (var i = 0; i < input.files.length; i++) {
+                    var li = document.createElement('li');
+                    li.className = 'list-group-item d-flex justify-content-between';
+                    var nombre = document.createElement('span');
+                    nombre.textContent = input.files[i].name;
+                    var tam = document.createElement('span');
+                    tam.className = 'text-muted small';
+                    tam.textContent = Math.round(input.files[i].size / 1024) + ' KB';
+                    li.appendChild(nombre);
+                    li.appendChild(tam);
+                    lista.appendChild(li);
+                }
+            }
+
+            form.addEventListener('submit', function () {
+                var btn = document.getElementById('btn-subir');
+                btn.disabled = true;
+                btn.textContent = 'Subiendo...';
+            });
+        })();
+    </script>
+}

@@ -9,16 +9,20 @@
                 <h1 class="h3 mb-3">SPEF</h1>
                 <p class="text-muted">Sistema de corrección automática de exámenes</p>
                 <hr />
-                @using (Html.BeginForm("LoginDev", "Account", new { returnUrl = ViewBag.ReturnUrl }, FormMethod.Post))
+                @if (TempData["Error"] != null)
+                {
+                    <div class="alert alert-danger">@TempData["Error"]</div>
+                }
+                @using (Html.BeginForm("ExternalLogin", "Account", new { returnUrl = ViewBag.ReturnUrl }, FormMethod.Post))
                 {
                     @Html.AntiForgeryToken()
                     <button type="submit" class="btn btn-primary btn-lg w-100">
-                        Entrar (modo desarrollo)
+                        Entrar con Google
                     </button>
                 }
                 <p class="text-muted small mt-3 mb-0">
-                    El inicio de sesión con Google estará disponible cuando se configuren
-                    las credenciales de OAuth.
+                    Inicia sesión con tu cuenta de Google. La primera vez se te pedirá autorizar
+                    el acceso a Google Drive, donde se guardarán los PDFs de los exámenes.
                 </p>
             </div>
         </div>

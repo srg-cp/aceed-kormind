@@ -19,9 +19,16 @@
         @if (!string.IsNullOrEmpty(Model.ArchivoRef))
         {
             <a href="@Url.Action("Descargar", new { id = Model.Id })" class="btn btn-outline-primary">Descargar PDF</a>
+            <a href="@Url.Action("Calibrar", "Calibracion", new { id = Model.Id })" class="btn btn-primary">Calibrar clave</a>
+            <a href="@Url.Action("Index", "Evaluaciones", new { examenBaseId = Model.Id })" class="btn btn-success">Entregas de estudiantes</a>
         }
     </div>
 </div>
+
+@if (TempData["Exito"] != null)
+{
+    <div class="alert alert-success">@TempData["Exito"]</div>
+}
 
 <div class="row">
     <div class="col-md-6">
@@ -69,9 +76,46 @@
             }
         </table>
 
-        <div class="alert alert-light border">
-            La <strong>calibración de la clave</strong> (extraer preguntas, respuestas y puntajes del PDF)
-            llegará en el siguiente incremento. Por ahora el examen queda en estado Borrador.
-        </div>
     </div>
 </div>
+
+<h4 class="mt-4">Clave de corrección</h4>
+@{ var preguntas = Model.PreguntasClave == null ? new List<pjtSPEF.Models.Entities.PreguntaClave>() : Model.PreguntasClave.OrderBy(p => p.Numero).ToList(); }
+@if (preguntas.Count == 0)
+{
+    <div class="alert alert-light border">
+        Este examen aún no tiene clave. Usa <strong>Calibrar clave</strong> para extraerla del PDF con IA
+        (o cargarla a mano) — sin clave no se pueden calificar entregas.
+    </div>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th style="width: 4rem">N.º</th>
+                <th>Enunciado</th>
+                <th>Respuesta esperada / criterios</th>
+                <th style="width: 7rem">Puntaje</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in preguntas)
+            {
+                <tr>
+                    <td>@p.Numero</td>
+                    <td style="white-space: pre-wrap">@p.Enunciado</td>
+                    <td style="white-space: pre-wrap">@p.RespuestaEsperada</td>
+                    <td>@p.Puntaje.ToString("0.##")</td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td colspan="2" class="text-end fw-bold">Total:</td>
+                <td class="fw-bold">@preguntas.Sum(p => p.Puntaje).ToString("0.##")</td>
+            </tr>
+        </tfoot>
+    </table>
+}

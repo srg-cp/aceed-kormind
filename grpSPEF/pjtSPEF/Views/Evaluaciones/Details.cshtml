@@ -1,0 +1,206 @@
+@model pjtSPEF.Models.Entities.EvaluacionEstudiante
+@{
+    var examen = Model.ExamenBase;
+    ViewBag.Title = "Entrega — " + (string.IsNullOrWhiteSpace(Model.NombreEstudiante) ? "(sin nombre)" : Model.NombreEstudiante);
+    var respuestas = Model.Respuestas == null
+        ? new List<pjtSPEF.Models.Entities.RespuestaEstudiante>()
+        : Model.Respuestas.OrderBy(r => r.Numero).ToList();
+}
+
+@Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
+{
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = examen.TipoEvaluacion.Unidad.CursoId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + examen.TipoEvaluacion.Unidad.Numero, Url.Action("Details", "Unidades", new { id = examen.TipoEvaluacion.UnidadId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Nombre, Url.Action("Details", "TiposEvaluacion", new { id = examen.TipoEvaluacionId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.Titulo, Url.Action("Details", "ExamenesBase", new { id = examen.Id })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Entregas", Url.Action("Index", new { examenBaseId = examen.Id })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(string.IsNullOrWhiteSpace(Model.NombreEstudiante) ? "(sin nombre)" : Model.NombreEstudiante)
+})
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex align-items-center gap-2">
+        <h2 class="mb-0" id="nombre-display">@(string.IsNullOrWhiteSpace(Model.NombreEstudiante) ? "(sin nombre)" : Model.NombreEstudiante)</h2>
+        <button type="button" class="btn btn-sm btn-link text-decoration-none" id="btn-editar-nombre" title="Editar nombre">✎ Editar</button>
+        @using (Html.BeginForm("EditarNombre", "Evaluaciones", new { id = Model.Id }, FormMethod.Post, new { @class = "d-none align-items-center gap-2", id = "form-editar-nombre" }))
+        {
+            @Html.AntiForgeryToken()
+            <input type="text" name="nombreEstudiante" class="form-control form-control-sm" style="width: 18rem"
+                   value="@Model.NombreEstudiante" maxlength="200" required />
+            <button type="submit" class="btn btn-sm btn-primary">Guardar</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-cancelar-nombre">Cancelar</button>
+        }
+    </div>
+    <div>
+        @if (!string.IsNullOrEmpty(Model.ArchivoRef))
+        {
+            <a href="@Url.Action("Descargar", new { id = Model.Id })" class="btn btn-outline-primary">Descargar PDF</a>
+        }
+        @{ var yaCalificada = Model.Estado == pjtSPEF.Models.Entities.EstadoEvaluacion.Calificada; }
+        @using (Html.BeginForm("Calificar", "Evaluaciones", new { id = Model.Id }, FormMethod.Post, new { @class = "d-inline", id = "form-calificar" }))
+        {
+            @Html.AntiForgeryToken()
+            <div class="btn-group" role="group" aria-label="Calificar con IA">
+                <button type="submit" name="proveedor" value="gemini" class="btn btn-primary btn-calificar">
+                    @(yaCalificada ? "Re-calificar flash" : "Calificar flash")
+                </button>
+                <button type="submit" name="proveedor" value="claude" class="btn btn-dark btn-calificar">
+                    @(yaCalificada ? "Re-calificar pro" : "Calificar pro")
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@if (TempData["Exito"] != null)
+{
+    <div class="alert alert-success">@TempData["Exito"]</div>
+}
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger">@TempData["Error"]</div>
+}
+
+<div class="row">
+    <div class="col-md-6">
+        <table class="table">
+            <tr>
+                <th style="width: 12rem">Estado</th>
+                <td>
+                    @switch (Model.Estado)
+                    {
+                        case pjtSPEF.Models.Entities.EstadoEvaluacion.Pendiente:
+                            <span class="badge bg-secondary">Pendiente</span>
+                            <span class="text-muted small">— aún sin calificar</span>
+                            break;
+                        case pjtSPEF.Models.Entities.EstadoEvaluacion.Calificada:
+                            <span class="badge bg-success">Calificada</span>
+                            break;
+                        case pjtSPEF.Models.Entities.EstadoEvaluacion.Error:
+                            <span class="badge bg-danger">Error</span>
+                            break;
+                    }
+                </td>
+            </tr>
+            <tr>
+                <th>Nota</th>
+                <td>
+                    @if (Model.NotaTotal.HasValue)
+                    {
+                        <strong class="fs-5">@Model.NotaTotal.Value.ToString("0.##")</strong><span class="text-muted"> / @examen.NotaMaxima.ToString("0.##")</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted">—</span>
+                    }
+                </td>
+            </tr>
+            <tr>
+                <th>Archivo</th>
+                <td>@(Model.ArchivoNombreOriginal ?? "—")</td>
+            </tr>
+            <tr>
+                <th>Subida</th>
+                <td>@Model.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+            </tr>
+            @if (Model.FechaCalificacion.HasValue)
+            {
+                <tr>
+                    <th>Calificada</th>
+                    <td>@Model.FechaCalificacion.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                </tr>
+            }
+        </table>
+    </div>
+</div>
+
+@if (Model.Estado == pjtSPEF.Models.Entities.EstadoEvaluacion.Error && !string.IsNullOrEmpty(Model.MensajeError))
+{
+    <div class="alert alert-danger">
+        <strong>No se pudo calificar:</strong> @Model.MensajeError
+    </div>
+}
+
+<h4 class="mt-4">Detalle por pregunta</h4>
+@if (respuestas.Count == 0)
+{
+    <div class="alert alert-light border">
+        Esta entrega aún no tiene calificación. Usa <strong>Calificar con IA</strong> para corregirla contra la clave.
+    </div>
+}
+else
+{
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th style="width: 4rem">N.º</th>
+                <th>Enunciado</th>
+                <th>Respuesta del alumno</th>
+                <th>Comentario de la IA</th>
+                <th style="width: 8rem">Puntaje</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in respuestas)
+            {
+                <tr>
+                    <td>@r.Numero</td>
+                    <td style="white-space: pre-wrap">@r.Enunciado</td>
+                    <td style="white-space: pre-wrap">@(string.IsNullOrWhiteSpace(r.RespuestaTexto) ? "(sin respuesta)" : r.RespuestaTexto)</td>
+                    <td style="white-space: pre-wrap">@r.Comentario</td>
+                    <td>@r.PuntajeObtenido.ToString("0.##") <span class="text-muted">/ @r.PuntajeMaximo.ToString("0.##")</span></td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td colspan="2"></td>
+                <td class="text-end fw-bold">Total:</td>
+                <td class="fw-bold">
+                    @respuestas.Sum(r => r.PuntajeObtenido).ToString("0.##")
+                    <span class="text-muted">/ @respuestas.Sum(r => r.PuntajeMaximo).ToString("0.##")</span>
+                </td>
+            </tr>
+        </tfoot>
+    </table>
+}
+
+@section scripts {
+    <script>
+        var formEditarNombre = document.getElementById('form-editar-nombre');
+        var nombreDisplay = document.getElementById('nombre-display');
+        var btnEditarNombre = document.getElementById('btn-editar-nombre');
+
+        btnEditarNombre.addEventListener('click', function () {
+            nombreDisplay.classList.add('d-none');
+            btnEditarNombre.classList.add('d-none');
+            formEditarNombre.classList.remove('d-none');
+            formEditarNombre.classList.add('d-flex');
+            formEditarNombre.querySelector('input[name="nombreEstudiante"]').focus();
+        });
+
+        document.getElementById('btn-cancelar-nombre').addEventListener('click', function () {
+            formEditarNombre.classList.add('d-none');
+            formEditarNombre.classList.remove('d-flex');
+            nombreDisplay.classList.remove('d-none');
+            btnEditarNombre.classList.remove('d-none');
+        });
+
+        var formCalificar = document.getElementById('form-calificar');
+        var enviandoCalificacion = false;
+        formCalificar.querySelectorAll('.btn-calificar').forEach(function (boton) {
+            boton.addEventListener('click', function (e) {
+                if (enviandoCalificacion) {
+                    e.preventDefault();
+                    return;
+                }
+                enviandoCalificacion = true;
+                boton.textContent = 'Calificando... (puede tardar)';
+                formCalificar.querySelectorAll('.btn-calificar').forEach(function (otro) {
+                    if (otro !== boton) otro.classList.add('disabled');
+                });
+            });
+        });
+    </script>
+}

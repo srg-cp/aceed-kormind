@@ -1,12 +1,12 @@
 /* ============================================================
-   SPEF — Script consolidado de base de datos
-   Crea la base de datos SPEF completa. Es idempotente: se puede
+   ACEED — Script consolidado de base de datos
+   Crea la base de datos ACEED completa. Es idempotente: se puede
    ejecutar más de una vez sin romper nada (solo crea lo que falta).
 
    Ejecutar con SSMS o:
-     sqlcmd -S "(localdb)\MSSQLLocalDB" -i database\script.sql -b -I
+     sqlcmd -S localhost -i database\script.sql -b -I
 
-   Última actualización: 2026-06-11 (Incremento 1)
+   Última actualización: 2026-06-11 (Incremento 4 — entregas de estudiantes)
    ============================================================ */
 
 -- Requerido por el índice filtrado de usuarios (sqlcmd sin -I lo desactiva)
@@ -14,11 +14,11 @@ SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
 GO
 
-IF DB_ID(N'SPEF') IS NULL
-    CREATE DATABASE SPEF;
+IF DB_ID(N'ACEED') IS NULL
+    CREATE DATABASE ACEED;
 GO
 
-USE SPEF;
+USE ACEED;
 GO
 
 /* ---------- usuarios ---------- */
@@ -105,8 +105,66 @@ BEGIN
 END
 GO
 
-/* ---------- seed: usuario del modo desarrollo ---------- */
-IF NOT EXISTS (SELECT 1 FROM dbo.usuarios WHERE email = N'dev@spef.local')
-    INSERT INTO dbo.usuarios (email, nombre)
-    VALUES (N'dev@spef.local', N'Docente (modo desarrollo)');
+/* ---------- preguntas_clave ---------- */
+-- Clave de corrección del examen base: una fila por pregunta.
+-- respuesta_esperada guarda la respuesta correcta o los criterios de corrección
+-- que se le darán a Gemini al calificar las entregas de los alumnos.
+IF OBJECT_ID(N'dbo.preguntas_clave', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.preguntas_clave (
+        id                 INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_preguntas_clave PRIMARY KEY,
+        examen_base_id     INT            NOT NULL CONSTRAINT FK_preguntas_clave_examen REFERENCES dbo.examenes_base(id) ON DELETE CASCADE,
+        numero             INT            NOT NULL,
+        enunciado          NVARCHAR(MAX)  NOT NULL,
+        respuesta_esperada NVARCHAR(MAX)  NULL,
+        puntaje            DECIMAL(5,2)   NOT NULL CONSTRAINT CK_preguntas_clave_puntaje CHECK (puntaje > 0),
+        fecha_creacion     DATETIME2(0)   NOT NULL CONSTRAINT DF_preguntas_clave_fecha DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT UQ_preguntas_clave_examen_numero UNIQUE (examen_base_id, numero)
+    );
+END
+GO
+
+/* ---------- evaluaciones_estudiante ---------- */
+-- Entrega de un estudiante para un examen base: el PDF resuelto del alumno.
+-- archivo_ref sigue la misma convención que examenes_base (hoy DriveFileId).
+-- nota_total es la suma de los puntajes obtenidos; NULL mientras no se califica.
+-- estado: 0=Pendiente, 1=Calificada, 2=Error
+IF OBJECT_ID(N'dbo.evaluaciones_estudiante', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.evaluaciones_estudiante (
+        id                      INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_evaluaciones_estudiante PRIMARY KEY,
+        examen_base_id          INT            NOT NULL CONSTRAINT FK_evaluaciones_estudiante_examen REFERENCES dbo.examenes_base(id) ON DELETE CASCADE,
+        nombre_estudiante       NVARCHAR(200)  NULL,
+        archivo_ref             NVARCHAR(400)  NULL,
+        archivo_nombre_original NVARCHAR(255)  NULL,
+        total_paginas           INT            NULL CONSTRAINT CK_evaluaciones_estudiante_paginas CHECK (total_paginas BETWEEN 1 AND 10),
+        nota_total              DECIMAL(6,2)   NULL,
+        estado                  TINYINT        NOT NULL CONSTRAINT DF_evaluaciones_estudiante_estado DEFAULT 0,
+        mensaje_error           NVARCHAR(MAX)  NULL,
+        fecha_creacion          DATETIME2(0)   NOT NULL CONSTRAINT DF_evaluaciones_estudiante_fecha DEFAULT SYSUTCDATETIME(),
+        fecha_calificacion      DATETIME2(0)   NULL
+    );
+    CREATE INDEX IX_evaluaciones_estudiante_examen ON dbo.evaluaciones_estudiante(examen_base_id);
+END
+GO
+
+/* ---------- respuestas_estudiante ---------- */
+-- Detalle por pregunta de la calificación de una entrega.
+-- enunciado y puntaje_maximo son copias (snapshot) de la clave al momento de calificar,
+-- para que el detalle siga siendo legible aunque luego se recalibre la clave del examen.
+IF OBJECT_ID(N'dbo.respuestas_estudiante', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.respuestas_estudiante (
+        id                        INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_respuestas_estudiante PRIMARY KEY,
+        evaluacion_estudiante_id  INT            NOT NULL CONSTRAINT FK_respuestas_estudiante_evaluacion REFERENCES dbo.evaluaciones_estudiante(id) ON DELETE CASCADE,
+        numero                    INT            NOT NULL,
+        enunciado                 NVARCHAR(MAX)  NOT NULL,
+        respuesta_texto           NVARCHAR(MAX)  NULL,
+        puntaje_maximo            DECIMAL(5,2)   NOT NULL,
+        puntaje_obtenido          DECIMAL(5,2)   NOT NULL,
+        comentario                NVARCHAR(MAX)  NULL,
+        fecha_creacion            DATETIME2(0)   NOT NULL CONSTRAINT DF_respuestas_estudiante_fecha DEFAULT SYSUTCDATETIME()
+    );
+    CREATE INDEX IX_respuestas_estudiante_evaluacion ON dbo.respuestas_estudiante(evaluacion_estudiante_id);
+END
 GO

@@ -1,4 +1,4 @@
-# SPEF — Sistema Web de Corrección Automática de Exámenes Escritos (PDF)
+# ACEED — Automatización en la Calificación de Evaluaciones Escritas Digitalizadas
 ### ASP.NET MVC · .NET Framework 4.8 · Google OAuth/Drive · Gemini Flash
 
 ---
@@ -60,9 +60,9 @@ Aplicación web en **ASP.NET MVC sobre .NET Framework 4.8** que automatiza la co
 | Capa | Tecnología | Notas |
 |---|---|---|
 | Web | ASP.NET MVC 5, C#, .NET Framework 4.8, IIS | Requisito del proyecto. Solución `grpSPEF/grpSPEF.sln`, proyecto `pjtSPEF` |
-| Autenticación | Google OAuth 2.0 vía OWIN (`Microsoft.Owin.Security.Google`) | *Pendiente de credenciales.* Mientras tanto: **Forms Authentication en modo desarrollo** detrás de la interfaz `ICurrentUserService` (usuario `dev@spef.local`); migrar a OAuth no toca los controladores |
-| Almacenamiento de archivos | Google Drive API v3 (`Google.Apis.Drive.v3`) | *Pendiente de credenciales.* Mientras tanto: **disco local** (`App_Data/storage`) detrás de la interfaz `IFileStorageService`; el modelo usa una referencia genérica `archivo_ref` que mañana será el DriveFileId |
-| Base de datos | SQL Server + Entity Framework 6 | **La BD se crea con scripts manuales en `database/`** (ver §5); EF6 corre con initializer deshabilitado y mapeo explícito a tablas snake_case |
+| Autenticación | **Google OAuth 2.0 vía OWIN** (`Microsoft.Owin.Security.Google` 4.2.3) | ✅ Activo. Login real con Google detrás de `ICurrentUserService`; el docente se crea/actualiza en su primer ingreso. Claves en `Secrets.config` |
+| Almacenamiento de archivos | **Google Drive API v3** (`Google.Apis.Drive.v3` 1.74.0) | ✅ Activo. Los PDFs se guardan en el Drive del docente (scope `drive.file`, carpeta `ACEED/<categoría>`) detrás de `IFileStorageService`; `archivo_ref` guarda el DriveFileId. El refresh token se cifra (DPAPI) en `usuarios.refresh_token` |
+| Base de datos | **SQL Server 2019** (`localhost`, BD `ACEED`) + Entity Framework 6 | **La BD se crea con scripts manuales en `database/`** (ver §5); EF6 corre con initializer deshabilitado y mapeo explícito a tablas snake_case |
 | Validación de PDF | PdfPig 0.1.14 | Verifica que el archivo sea un PDF real y cuente ≤ 10 páginas |
 | Rasterización PDF | PDFium (PdfiumViewer) o Ghostscript | *Futuro.* PDF → imagen **300 DPI** (calidad crítica para lectura de manuscrito) |
 | Extracción de texto de la clave | PdfPig | *Futuro.* Texto nativo del PDF base (digital) — precisión total, sin OCR |
@@ -117,7 +117,7 @@ storage/
 | `unidades` | curso (FK, cascade), número, nombre — UNIQUE(curso, número) | ✅ Creada |
 | `tipos_evaluacion` | unidad (FK, cascade), nombre (p. ej. "Examen teórico", "Práctica calificada") | ✅ Creada |
 | `examenes_base` | tipo de evaluación (FK, cascade), título, **archivo_ref** (genérico: ruta local hoy, DriveFileId mañana), archivo_nombre_original, total_paginas (CHECK 1–10), **nota_maxima** (DECIMAL, default 20, CHECK > 0), estado: *Borrador → Calibrado → Activo* | ✅ Creada |
-| `preguntas_clave` | examen base (FK), número, enunciado, respuesta correcta, tipo, puntaje (suma = nota_maxima), página, criterios de puntaje parcial | ⏳ Próximo incremento |
+| `preguntas_clave` | examen base (FK), número, enunciado, respuesta esperada/criterios, puntaje (suma = nota_maxima) | ✅ Creada |
 | `entregas_alumno` | examen base (FK), alumno, archivo_ref, estado del procesamiento, nota final | ⏳ Próximo incremento |
 | `respuestas_evaluadas` | entrega (FK), pregunta (FK), transcripción, veredicto, puntajes, confianzas, **feedback**, requiere_revisión | ⏳ Próximo incremento |
 | `log_procesamiento` | entrega (FK), etapa, resultado, duración, error | ⏳ Próximo incremento |
@@ -261,31 +261,36 @@ INSTRUCCIONES:
 
 ### Cómo correr el proyecto
 
-1. Ejecutar `database/script.sql` (SSMS, o `sqlcmd -S "(localdb)\MSSQLLocalDB" -i database\script.sql -b -I`). Crea la BD `SPEF` completa; es idempotente.
-2. Si no se usa LocalDB, ajustar el connection string `SpefDb` en `grpSPEF/pjtSPEF/Web.config`.
-3. Abrir `grpSPEF/grpSPEF.sln` en Visual Studio 2022 y ejecutar (F5), o compilar con MSBuild y servir con IIS Express.
-4. Entrar con el botón **"Entrar (modo desarrollo)"** (usuario `dev@spef.local`, sin contraseña — auth simulada hasta tener credenciales de Google).
+1. Ejecutar `database/script.sql` (SSMS, o `sqlcmd -S localhost -i database\script.sql -b -I`). Crea la BD `ACEED` completa; es idempotente.
+2. Si la BD no está en `localhost`, ajustar el connection string `SpefDb` en `grpSPEF/pjtSPEF/Web.config`.
+3. **Secretos**: copiar `grpSPEF/pjtSPEF/Secrets.config.example` como `Secrets.config` (misma carpeta) y completar `Gemini:ApiKey`, `GoogleAuth:ClientId` y `GoogleAuth:ClientSecret`. `Secrets.config` está en `.gitignore` y `Web.config` lo carga solo.
+4. En Google Cloud Console, el cliente OAuth debe tener registrado el redirect URI `https://localhost:44374/signin-google` (puerto SSL de IIS Express del proyecto).
+5. Abrir `grpSPEF/grpSPEF.sln` en Visual Studio 2022 y ejecutar (F5) — debe correr sobre **https://localhost:44374** para que el login de Google funcione.
+6. Entrar con **"Entrar con Google"**; la primera vez Google pide autorizar el acceso a Drive. El docente se crea solo en `usuarios`.
 
 ### Implementado hasta hoy
 
 - ✅ Estructura del proyecto (MVC 5, .NET 4.8) con capas: `Models/Entities`, `Models/ViewModels`, `Data` (EF6 + mapeos snake_case), `Services` (interfaces + implementaciones).
-- ✅ Esquema SQL inicial en `database/`: usuarios, cursos, unidades, tipos_evaluacion, examenes_base (+ seed del usuario dev).
-- ✅ Autenticación de desarrollo (Forms Auth) detrás de `ICurrentUserService`; toda la app exige sesión (`AuthorizeAttribute` global) y autoriza **por recurso** (cada consulta navega hasta el dueño).
+- ✅ Esquema SQL en `database/` (BD `ACEED`): usuarios, cursos, unidades, tipos_evaluacion, examenes_base, preguntas_clave.
+- ✅ **Autenticación real con Google OAuth (OWIN)** detrás de `ICurrentUserService`; el docente se crea/actualiza en su primer ingreso. Toda la app exige sesión (`AuthorizeAttribute` global) y autoriza **por recurso** (cada consulta navega hasta el dueño).
 - ✅ CRUD jerárquico completo con navegación drill-down y breadcrumbs: Cursos → Unidades → Tipos de Evaluación → Exámenes Base.
-- ✅ Subida de PDF del examen base con validación real (magic bytes + conteo de páginas ≤ 10 con PdfPig), almacenamiento local tras `IFileStorageService`, descarga, reemplazo y borrado con limpieza de archivos (incluida la cascada al borrar curso/unidad/tipo).
-- ✅ Nota máxima configurable por examen (default 20) y estados Borrador/Calibrado/Activo (por ahora todo queda en Borrador).
+- ✅ Subida de PDF del examen base con validación real (magic bytes + conteo de páginas ≤ 10 con PdfPig), **almacenamiento en Google Drive del docente** (`drive.file`) tras `IFileStorageService`, descarga, reemplazo y borrado con limpieza de archivos (incluida la cascada al borrar curso/unidad/tipo).
+- ✅ Nota máxima configurable por examen (default 20) y estados Borrador/Calibrado/Activo.
+- ✅ **Calibración de la clave**: pantalla "Calibrar clave" por examen con grilla editable de preguntas (enunciado, respuesta esperada/criterios, puntaje), botón **"Extraer clave del PDF con IA"** (Gemini Flash lee el PDF completo y propone la clave en JSON estructurado vía `responseSchema`), validación de que los puntajes sumen la nota máxima, y guardado que pasa el examen a estado **Calibrado**. Implementada tras `IExtractorClaveService` (cambiar de proveedor de IA no toca controladores).
+- ✅ Manejo de secretos: `Secrets.config` (gitignoreado) cargado por `Web.config`, con plantilla `Secrets.config.example`.
+- ✅ **Integraciones reales activas**: login con Google (cualquier cuenta), almacenamiento en Google Drive y BD en SQL Server `localhost/ACEED`. El refresh token de Google se cifra (DPAPI) en `usuarios.refresh_token`.
 
 ### Pendiente (próximos incrementos)
 
-- ⏳ Calibración de la clave: extracción de texto (PdfPig) + estructuración con Gemini + vista de confirmación/edición de preguntas y puntajes.
 - ⏳ Entregas de alumnos, pipeline de corrección (Hangfire + rasterización + Gemini), bandeja de revisión, reportes.
-- ⏳ Integraciones reales: Google OAuth (OWIN), Google Drive, API key de Gemini.
 
 ### Registro de cambios
 
 | Fecha | Incremento | Cambios |
 |---|---|---|
 | 2026-06-11 | 1 | Plantilla limpia y rebrandeada, `.gitignore`, esquema SQL inicial (`database/`), EF6 + PdfPig instalados, auth dev (Forms) tras `ICurrentUserService`, CRUD jerárquico Cursos→Unidades→Tipos→Exámenes con subida/validación/descarga de PDF |
+| 2026-06-11 | 2 | Tabla `preguntas_clave` (script 06 + consolidado), calibración de la clave con Gemini (`IExtractorClaveService`/`GeminiExtractorClaveService`, modelo `gemini-2.5-flash` configurable), pantalla Calibrar con grilla editable y suma de puntajes validada, estado Calibrado, `Secrets.config` para claves, fix `fileEncoding="utf-8"` (acentos en vistas) |
+| 2026-06-11 | 3 | **Integración real**: se elimina el modo desarrollo. Login con Google OAuth (OWIN: `Startup.cs`, cookies + `UseGoogleAuthentication`, scope `drive.file`, `access_type=offline`), `AccountController` con `ExternalLogin`/callback y upsert del docente; `DriveStorageService` reemplaza al disco local (PDFs en el Drive del docente, `archivo_ref`=DriveFileId); `TokenProtector` (DPAPI) cifra el refresh token; BD movida a `localhost/ACEED`; se quita el seed/usuario dev |
 
 ---
 

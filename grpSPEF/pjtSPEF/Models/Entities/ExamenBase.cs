@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace pjtSPEF.Models.Entities
 {
@@ -20,5 +21,7 @@ namespace pjtSPEF.Models.Entities
         public DateTime? FechaModificacion { get; set; }
 
         public virtual TipoEvaluacion TipoEvaluacion { get; set; }
+        public virtual ICollection<PreguntaClave> PreguntasClave { get; set; }
+        public virtual ICollection<EvaluacionEstudiante> Evaluaciones { get; set; }
     }
 }

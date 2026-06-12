@@ -12,21 +12,14 @@ namespace pjtSPEF.Controllers
     public class TiposEvaluacionController : Controller
     {
         private readonly SpefDbContext _db;
-        private readonly ICurrentUserService _currentUser;
-        private readonly IFileStorageService _storage;
+        private readonly GoogleCurrentUserService _currentUser;
+        private readonly DriveStorageService _storage;
 
         public TiposEvaluacionController()
         {
             _db = new SpefDbContext();
-            _currentUser = new FormsCurrentUserService(_db);
-            _storage = new LocalFileStorageService();
-        }
-
-        public TiposEvaluacionController(SpefDbContext db, ICurrentUserService currentUser, IFileStorageService storage)
-        {
-            _db = db;
-            _currentUser = currentUser;
-            _storage = storage;
+            _currentUser = new GoogleCurrentUserService(_db);
+            _storage = new DriveStorageService(_currentUser);
         }
 
         public ActionResult Details(int id)

@@ -4,7 +4,24 @@ using UglyToad.PdfPig;
 
 namespace pjtSPEF.Services
 {
-    public class PdfPigValidationService : IPdfValidationService
+    public class ResultadoValidacionPdf
+    {
+        public bool EsValido { get; set; }
+        public int TotalPaginas { get; set; }
+        public string Error { get; set; }
+
+        public static ResultadoValidacionPdf Valido(int totalPaginas)
+        {
+            return new ResultadoValidacionPdf { EsValido = true, TotalPaginas = totalPaginas };
+        }
+
+        public static ResultadoValidacionPdf Invalido(string error)
+        {
+            return new ResultadoValidacionPdf { EsValido = false, Error = error };
+        }
+    }
+
+    public class PdfPigValidationService
     {
         // Regla de negocio: un examen (base o de alumno) tiene como máximo 10 hojas.
         public const int MaximoPaginas = 10;

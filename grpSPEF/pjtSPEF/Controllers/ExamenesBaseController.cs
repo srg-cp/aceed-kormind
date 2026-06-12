@@ -12,28 +12,17 @@ namespace pjtSPEF.Controllers
 {
     public class ExamenesBaseController : Controller
     {
-        private const string CategoriaStorage = "examenes-base";
-
         private readonly SpefDbContext _db;
-        private readonly ICurrentUserService _currentUser;
-        private readonly IFileStorageService _storage;
-        private readonly IPdfValidationService _pdfValidator;
+        private readonly GoogleCurrentUserService _currentUser;
+        private readonly DriveStorageService _storage;
+        private readonly PdfPigValidationService _pdfValidator;
 
         public ExamenesBaseController()
         {
             _db = new SpefDbContext();
-            _currentUser = new FormsCurrentUserService(_db);
-            _storage = new LocalFileStorageService();
+            _currentUser = new GoogleCurrentUserService(_db);
+            _storage = new DriveStorageService(_currentUser);
             _pdfValidator = new PdfPigValidationService();
-        }
-
-        public ExamenesBaseController(SpefDbContext db, ICurrentUserService currentUser,
-            IFileStorageService storage, IPdfValidationService pdfValidator)
-        {
-            _db = db;
-            _currentUser = currentUser;
-            _storage = storage;
-            _pdfValidator = pdfValidator;
         }
 
         public ActionResult Details(int id)
@@ -95,7 +84,18 @@ namespace pjtSPEF.Controllers
                 return View(model);
             }
 
-            var archivoRef = _storage.Guardar(model.ArchivoPdf.InputStream, CategoriaStorage, ".pdf");
+            string archivoRef;
+            try
+            {
+                archivoRef = _storage.Guardar(model.ArchivoPdf.InputStream, RutaStorage.ExamenBase(tipo, model.Titulo), ".pdf");
+            }
+            catch (DriveNoAutorizadoException ex)
+            {
+                ModelState.AddModelError("ArchivoPdf", ex.Message);
+                ViewBag.TipoEvaluacion = tipo;
+                return View(model);
+            }
+
             try
             {
                 var examen = new ExamenBase
@@ -175,16 +175,41 @@ namespace pjtSPEF.Controllers
                 return View(model);
             }
 
+            // Si cambió el título, renombra la carpeta del examen en Drive para que el directorio
+            // refleje el nuevo nombre (arrastra el PDF base y la subcarpeta de entregas).
+            var tituloNuevo = model.Titulo.Trim();
+            if (!string.Equals(examen.Titulo, tituloNuevo, StringComparison.Ordinal) && !string.IsNullOrEmpty(examen.ArchivoRef))
+            {
+                _storage.RenombrarCarpetaContenedora(
+                    examen.ArchivoRef,
+                    RutaStorage.NombreCarpetaExamen(examen.Titulo),
+                    RutaStorage.NombreCarpetaExamen(tituloNuevo));
+            }
+
             string archivoAnterior = null;
             if (hayArchivoNuevo)
             {
+                string nuevoRef;
+                try
+                {
+                    nuevoRef = _storage.Guardar(model.ArchivoPdf.InputStream, RutaStorage.ExamenBase(examen.TipoEvaluacion, model.Titulo), ".pdf");
+                }
+                catch (DriveNoAutorizadoException ex)
+                {
+                    ModelState.AddModelError("ArchivoPdf", ex.Message);
+                    model.Id = id;
+                    model.TipoEvaluacionId = examen.TipoEvaluacionId;
+                    ViewBag.Examen = examen;
+                    return View(model);
+                }
+
                 archivoAnterior = examen.ArchivoRef;
-                examen.ArchivoRef = _storage.Guardar(model.ArchivoPdf.InputStream, CategoriaStorage, ".pdf");
+                examen.ArchivoRef = nuevoRef;
                 examen.ArchivoNombreOriginal = Path.GetFileName(model.ArchivoPdf.FileName);
                 examen.TotalPaginas = totalPaginas;
             }
 
-            examen.Titulo = model.Titulo.Trim();
+            examen.Titulo = tituloNuevo;
             examen.NotaMaxima = model.NotaMaxima.Value;
             examen.FechaModificacion = DateTime.UtcNow;
             _db.SaveChanges();

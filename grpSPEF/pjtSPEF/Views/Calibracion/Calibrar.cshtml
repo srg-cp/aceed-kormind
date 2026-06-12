@@ -1,0 +1,175 @@
+@model pjtSPEF.Models.ViewModels.CalibracionViewModel
+@{
+    ViewBag.Title = "Calibrar clave";
+    var examen = (pjtSPEF.Models.Entities.ExamenBase)ViewBag.Examen;
+}
+
+@Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
+{
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = examen.TipoEvaluacion.Unidad.CursoId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + examen.TipoEvaluacion.Unidad.Numero, Url.Action("Details", "Unidades", new { id = examen.TipoEvaluacion.UnidadId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Nombre, Url.Action("Details", "TiposEvaluacion", new { id = examen.TipoEvaluacionId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.Titulo, Url.Action("Details", "ExamenesBase", new { id = examen.Id })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Calibrar clave")
+})
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Calibrar clave — @examen.Titulo</h2>
+    @using (Html.BeginForm("Extraer", "Calibracion", new { id = examen.Id }, FormMethod.Post))
+    {
+        @Html.AntiForgeryToken()
+        <button type="submit" class="btn btn-primary" id="btn-extraer">
+            Extraer clave del PDF con IA
+        </button>
+    }
+</div>
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger">@TempData["Error"]</div>
+}
+@if (TempData["Exito"] != null)
+{
+    <div class="alert alert-success">@TempData["Exito"]</div>
+}
+
+<p class="text-muted">
+    La IA lee el PDF del examen (@(examen.ArchivoNombreOriginal ?? "sin archivo")) y propone las preguntas,
+    respuestas y puntajes. Revisa y corrige lo que haga falta: <strong>lo que guardes aquí es la clave
+    con la que se calificarán las entregas</strong>. Los puntajes deben sumar @examen.NotaMaxima.ToString("0.##").
+</p>
+
+@using (Html.BeginForm("Guardar", "Calibracion", FormMethod.Post, new { id = "form-clave" }))
+{
+    @Html.AntiForgeryToken()
+    @Html.HiddenFor(m => m.ExamenBaseId)
+    @Html.ValidationSummary(true, "", new { @class = "text-danger" })
+
+    <table class="table align-middle" id="tabla-preguntas">
+        <thead>
+            <tr>
+                <th style="width: 4rem">N.º</th>
+                <th>Enunciado</th>
+                <th>Respuesta esperada / criterios</th>
+                <th style="width: 8rem">Puntaje</th>
+                <th style="width: 4rem"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (var i = 0; i < Model.Preguntas.Count; i++)
+            {
+                <tr class="fila-pregunta">
+                    <td class="celda-numero">@(i + 1)</td>
+                    <td>
+                        @Html.TextAreaFor(m => m.Preguntas[i].Enunciado, new { @class = "form-control campo-enunciado", rows = 2 })
+                        @Html.ValidationMessageFor(m => m.Preguntas[i].Enunciado, "", new { @class = "text-danger" })
+                    </td>
+                    <td>
+                        @Html.TextAreaFor(m => m.Preguntas[i].RespuestaEsperada, new { @class = "form-control campo-respuesta", rows = 2 })
+                    </td>
+                    <td>
+                        @Html.TextBoxFor(m => m.Preguntas[i].Puntaje, new { @class = "form-control campo-puntaje", type = "number", step = "0.25", min = "0.25" })
+                        @Html.ValidationMessageFor(m => m.Preguntas[i].Puntaje, "", new { @class = "text-danger" })
+                    </td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-outline-danger btn-quitar" title="Quitar pregunta">&times;</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td colspan="2" class="text-end fw-bold">Suma de puntajes:</td>
+                <td><span id="suma-puntajes">0</span> / @examen.NotaMaxima.ToString("0.##")</td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <div class="mb-3">
+        <button type="button" class="btn btn-outline-secondary" id="btn-agregar">+ Agregar pregunta</button>
+    </div>
+
+    <button type="submit" class="btn btn-success">Guardar clave</button>
+    <a href="@Url.Action("Details", "ExamenesBase", new { id = examen.Id })" class="btn btn-outline-secondary">Cancelar</a>
+}
+
+@section scripts {
+    <script>
+        (function () {
+            var notaMaxima = @examen.NotaMaxima.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var tbody = document.querySelector('#tabla-preguntas tbody');
+
+            function recalcular() {
+                var suma = 0;
+                tbody.querySelectorAll('.campo-puntaje').forEach(function (input) {
+                    var v = parseFloat(input.value);
+                    if (!isNaN(v)) suma += v;
+                });
+                var span = document.getElementById('suma-puntajes');
+                span.textContent = (Math.round(suma * 100) / 100);
+                span.className = Math.abs(suma - notaMaxima) < 0.005 ? 'text-success fw-bold' : 'text-danger fw-bold';
+            }
+
+            // Los names deben quedar como Preguntas[0].X, Preguntas[1].X, ... sin huecos
+            // para que el model binder de MVC arme la lista completa.
+            function reindexar() {
+                var filas = tbody.querySelectorAll('.fila-pregunta');
+                filas.forEach(function (fila, i) {
+                    fila.querySelector('.celda-numero').textContent = i + 1;
+                    fila.querySelectorAll('textarea, input').forEach(function (campo) {
+                        if (campo.name) campo.name = campo.name.replace(/Preguntas\[\d+\]/, 'Preguntas[' + i + ']');
+                        if (campo.id) campo.id = campo.id.replace(/Preguntas_\d+__/, 'Preguntas_' + i + '__');
+                    });
+                });
+            }
+
+            function crearFila() {
+                var tr = document.createElement('tr');
+                tr.className = 'fila-pregunta';
+                tr.innerHTML =
+                    '<td class="celda-numero"></td>' +
+                    '<td><textarea class="form-control campo-enunciado" rows="2" name="Preguntas[0].Enunciado"></textarea></td>' +
+                    '<td><textarea class="form-control campo-respuesta" rows="2" name="Preguntas[0].RespuestaEsperada"></textarea></td>' +
+                    '<td><input class="form-control campo-puntaje" type="number" step="0.25" min="0.25" name="Preguntas[0].Puntaje" /></td>' +
+                    '<td><button type="button" class="btn btn-sm btn-outline-danger btn-quitar" title="Quitar pregunta">&times;</button></td>';
+                tbody.appendChild(tr);
+                reindexar();
+                recalcular();
+            }
+
+            document.getElementById('btn-agregar').addEventListener('click', crearFila);
+
+            tbody.addEventListener('click', function (e) {
+                if (e.target.classList.contains('btn-quitar')) {
+                    e.target.closest('tr').remove();
+                    reindexar();
+                    recalcular();
+                }
+            });
+
+            tbody.addEventListener('input', function (e) {
+                if (e.target.classList.contains('campo-puntaje')) recalcular();
+            });
+
+            var btnExtraer = document.getElementById('btn-extraer');
+            btnExtraer.closest('form').addEventListener('submit', function (e) {
+                var hayFilasConTexto = Array.prototype.some.call(
+                    tbody.querySelectorAll('.campo-enunciado'),
+                    function (t) { return t.value.trim().length > 0; });
+                if (hayFilasConTexto &&
+                    !confirm('La extracción reemplazará lo que hay en la grilla (no lo ya guardado). ¿Continuar?')) {
+                    e.preventDefault();
+                    return;
+                }
+                btnExtraer.disabled = true;
+                btnExtraer.textContent = 'Extrayendo con IA... (puede tardar ~1 min)';
+            });
+
+            if (tbody.querySelectorAll('.fila-pregunta').length === 0) crearFila();
+            recalcular();
+        })();
+    </script>
+}

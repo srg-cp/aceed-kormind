@@ -8,8 +8,6 @@ namespace pjtSPEF.Data
     {
         static SpefDbContext()
         {
-            // La BD se crea y evoluciona con los scripts manuales de database/;
-            // EF nunca debe intentar crearla ni modificarla.
             Database.SetInitializer<SpefDbContext>(null);
         }
 
@@ -22,6 +20,9 @@ namespace pjtSPEF.Data
         public DbSet<Unidad> Unidades { get; set; }
         public DbSet<TipoEvaluacion> TiposEvaluacion { get; set; }
         public DbSet<ExamenBase> ExamenesBase { get; set; }
+        public DbSet<PreguntaClave> PreguntasClave { get; set; }
+        public DbSet<EvaluacionEstudiante> EvaluacionesEstudiante { get; set; }
+        public DbSet<RespuestaEstudiante> RespuestasEstudiante { get; set; }
 
         protected override void OnModelCreating(DbModelBuilder modelBuilder)
         {
@@ -30,6 +31,9 @@ namespace pjtSPEF.Data
             modelBuilder.Configurations.Add(new UnidadMap());
             modelBuilder.Configurations.Add(new TipoEvaluacionMap());
             modelBuilder.Configurations.Add(new ExamenBaseMap());
+            modelBuilder.Configurations.Add(new PreguntaClaveMap());
+            modelBuilder.Configurations.Add(new EvaluacionEstudianteMap());
+            modelBuilder.Configurations.Add(new RespuestaEstudianteMap());
         }
     }
 }

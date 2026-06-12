@@ -5,11 +5,13 @@ using pjtSPEF.Models.Entities;
 
 namespace pjtSPEF.Services
 {
-    public class FormsCurrentUserService : ICurrentUserService
+    // Resuelve el docente autenticado a partir de la cookie de sesión (OWIN),
+    // cuyo Name es el email obtenido del login con Google.
+    public class GoogleCurrentUserService
     {
         private readonly SpefDbContext _db;
 
-        public FormsCurrentUserService(SpefDbContext db)
+        public GoogleCurrentUserService(SpefDbContext db)
         {
             _db = db;
         }
@@ -20,7 +22,7 @@ namespace pjtSPEF.Services
             if (context == null || context.User == null || !context.User.Identity.IsAuthenticated)
                 return null;
 
-            // El name de la identidad es el email (lo setea AccountController al hacer login).
+            // El Name de la identidad es el email (lo setea AccountController al firmar la cookie tras el login con Google).
             var email = context.User.Identity.Name;
             if (string.IsNullOrEmpty(email))
                 return null;

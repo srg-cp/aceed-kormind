@@ -1,0 +1,104 @@
+@model pjtSPEF.Models.Entities.ExamenBase
+@{
+    ViewBag.Title = "Entregas — " + Model.Titulo;
+    var hayClave = Model.PreguntasClave != null && Model.PreguntasClave.Any();
+    var evaluaciones = Model.Evaluaciones == null
+        ? new List<pjtSPEF.Models.Entities.EvaluacionEstudiante>()
+        : Model.Evaluaciones.OrderByDescending(e => e.FechaCreacion).ToList();
+}
+
+@Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
+{
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.TipoEvaluacion.Unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = Model.TipoEvaluacion.Unidad.CursoId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + Model.TipoEvaluacion.Unidad.Numero, Url.Action("Details", "Unidades", new { id = Model.TipoEvaluacion.UnidadId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.TipoEvaluacion.Nombre, Url.Action("Details", "TiposEvaluacion", new { id = Model.TipoEvaluacionId })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.Titulo, Url.Action("Details", "ExamenesBase", new { id = Model.Id })),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Entregas")
+})
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Entregas — @Model.Titulo</h2>
+    <a href="@Url.Action("Subir", new { examenBaseId = Model.Id })" class="btn btn-primary">Subir entregas</a>
+</div>
+
+@if (TempData["Exito"] != null)
+{
+    <div class="alert alert-success">@TempData["Exito"]</div>
+}
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger">@TempData["Error"]</div>
+}
+
+@if (!hayClave)
+{
+    <div class="alert alert-warning">
+        Este examen aún no tiene clave calibrada. Puedes subir entregas, pero no se podrán calificar
+        hasta que <a href="@Url.Action("Calibrar", "Calibracion", new { id = Model.Id })">calibres la clave</a>.
+    </div>
+}
+
+@if (evaluaciones.Count == 0)
+{
+    <div class="alert alert-info">
+        Todavía no hay entregas. Usa <strong>Subir entregas</strong> para cargar los PDFs resueltos de los estudiantes.
+    </div>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Estudiante</th>
+                <th>Archivo</th>
+                <th style="width: 9rem">Estado</th>
+                <th style="width: 8rem">Nota</th>
+                <th>Subida</th>
+                <th class="text-end">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var ev in evaluaciones)
+            {
+                <tr>
+                    <td><a href="@Url.Action("Details", new { id = ev.Id })">@(string.IsNullOrWhiteSpace(ev.NombreEstudiante) ? "(sin nombre)" : ev.NombreEstudiante)</a></td>
+                    <td class="text-muted small">@(ev.ArchivoNombreOriginal ?? "—")</td>
+                    <td>
+                        @switch (ev.Estado)
+                        {
+                            case pjtSPEF.Models.Entities.EstadoEvaluacion.Pendiente:
+                                <span class="badge bg-secondary">Pendiente</span>
+                                break;
+                            case pjtSPEF.Models.Entities.EstadoEvaluacion.Calificada:
+                                <span class="badge bg-success">Calificada</span>
+                                break;
+                            case pjtSPEF.Models.Entities.EstadoEvaluacion.Error:
+                                <span class="badge bg-danger">Error</span>
+                                break;
+                        }
+                    </td>
+                    <td>
+                        @if (ev.NotaTotal.HasValue)
+                        {
+                            <strong>@ev.NotaTotal.Value.ToString("0.##")</strong><span class="text-muted"> / @Model.NotaMaxima.ToString("0.##")</span>
+                        }
+                        else
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                    </td>
+                    <td>@ev.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                    <td class="text-end">
+                        <a href="@Url.Action("Details", new { id = ev.Id })" class="btn btn-sm btn-outline-primary">Abrir</a>
+                        @using (Html.BeginForm("Delete", "Evaluaciones", new { id = ev.Id }, FormMethod.Post, new { @class = "d-inline", onsubmit = "return confirm('¿Eliminar esta entrega y su PDF?');" }))
+                        {
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
