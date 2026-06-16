@@ -63,6 +63,8 @@ namespace pjtSPEF
             google.Scope.Add("email");
             google.Scope.Add("profile");
             google.Scope.Add("https://www.googleapis.com/auth/drive.file");
+            // Sheets: la jerarquía y las notas viven en un Spreadsheet por docente (SpefSheetStore).
+            google.Scope.Add("https://www.googleapis.com/auth/spreadsheets");
 
             app.UseGoogleAuthentication(google);
         }

@@ -75,6 +75,7 @@ namespace pjtSPEF.Services
             foreach (var pregunta in claveOrdenada)
             {
                 extraccion.PorNumero.TryGetValue(pregunta.Numero, out var respuestaAlumno);
+                extraccion.MarcasPorNumero.TryGetValue(pregunta.Numero, out var marca);
                 calificacion.PorNumero.TryGetValue(pregunta.Numero, out var notaItem);
 
                 var obtenido = (decimal?)notaItem?["puntajeObtenido"] ?? 0;
@@ -86,7 +87,11 @@ namespace pjtSPEF.Services
                     Numero = pregunta.Numero,
                     RespuestaTexto = (respuestaAlumno ?? string.Empty).Trim(),
                     PuntajeObtenido = obtenido,
-                    Comentario = ((string)notaItem?["comentario"] ?? string.Empty).Trim()
+                    Comentario = ((string)notaItem?["comentario"] ?? string.Empty).Trim(),
+                    Pagina = marca?.Pagina ?? 0,
+                    MarcaX = marca?.X,
+                    MarcaY = marca?.Y,
+                    Dudoso = marca?.Dudoso ?? false
                 });
             }
 
@@ -95,6 +100,14 @@ namespace pjtSPEF.Services
 
         // ---- Paso 1: extracción de lo que marcó el alumno (sin clave) -----------------------
 
+        private sealed class MarcaExtraida
+        {
+            public int Pagina;
+            public decimal? X;
+            public decimal? Y;
+            public bool Dudoso;
+        }
+
         private sealed class ResultadoExtraccion
         {
             public bool Exito;
@@ -102,6 +115,8 @@ namespace pjtSPEF.Services
             public string Nombre = string.Empty;
             // Respuesta transcrita del alumno por número de pregunta.
             public Dictionary<int, string> PorNumero = new Dictionary<int, string>();
+            // Ubicación de la marca del alumno por número de pregunta (para el ✔/✗ sobre el PDF).
+            public Dictionary<int, MarcaExtraida> MarcasPorNumero = new Dictionary<int, MarcaExtraida>();
 
             public static ResultadoExtraccion Fallo(string error) => new ResultadoExtraccion { Exito = false, Error = error };
         }
@@ -128,7 +143,13 @@ namespace pjtSPEF.Services
                 "indica QUÉ opción señaló: su letra y/o su texto. El símbolo de la marca (✔, ✗, X, círculo) NO es la " +
                 "respuesta; la respuesta es la opción a la que apunta esa marca.\n" +
                 "   - Si escribió texto, un número, una letra o un valor a mano, cópialo tal cual.\n" +
-                "   - Si dejó la pregunta en blanco, deja respuestaTexto vacío.\n\n" +
+                "   - Si dejó la pregunta en blanco, deja respuestaTexto vacío.\n" +
+                "3) UBICACIÓN de la marca (para poder señalarla luego): indica 'pagina' (número de página del PDF, " +
+                "empezando en 1) y la posición del CENTRO de la marca/respuesta del alumno como fracción de 0 a 1 desde la " +
+                "esquina SUPERIOR IZQUIERDA de esa página: 'xMarca' (0 = borde izquierdo, 1 = borde derecho) y " +
+                "'yMarca' (0 = borde superior, 1 = borde inferior). Sé lo más preciso posible.\n" +
+                "4) Si el alumno marcó MÁS DE UNA opción, o la marca es ambigua/dudosa, pon 'dudoso' = true; si la marca es " +
+                "única y clara, pon 'dudoso' = false. Si la pregunta quedó en blanco, pon pagina = 0, xMarca = 0, yMarca = 0, dudoso = false.\n\n" +
                 "Presta especial atención a marcas o escritura tenues, a lápiz, pequeñas o poco claras, y revisa TODAS " +
                 "las preguntas de principio a fin; es fácil saltarse la última.\n" +
                 "REGLA CLAVE: copia lo que el alumno REALMENTE escribió o marcó, aunque sea incorrecto. " +
@@ -156,9 +177,13 @@ namespace pjtSPEF.Services
                                 // 'observacion' antes que 'respuestaTexto' a propósito: obliga al modelo a
                                 // describir la marca que ve antes de decidir, subiendo la precisión de lectura.
                                 ["observacion"] = new JObject { ["type"] = "string" },
-                                ["respuestaTexto"] = new JObject { ["type"] = "string" }
+                                ["respuestaTexto"] = new JObject { ["type"] = "string" },
+                                ["pagina"] = new JObject { ["type"] = "integer" },
+                                ["xMarca"] = new JObject { ["type"] = "number" },
+                                ["yMarca"] = new JObject { ["type"] = "number" },
+                                ["dudoso"] = new JObject { ["type"] = "boolean" }
                             },
-                            ["required"] = new JArray { "numero", "observacion", "respuestaTexto" }
+                            ["required"] = new JArray { "numero", "observacion", "respuestaTexto", "pagina", "xMarca", "yMarca", "dudoso" }
                         }
                     }
                 },
@@ -196,9 +221,30 @@ namespace pjtSPEF.Services
                 var numero = (int?)item["numero"] ?? 0;
                 if (numero <= 0) continue;
                 resultado.PorNumero[numero] = ((string)item["respuestaTexto"] ?? string.Empty).Trim();
+                resultado.MarcasPorNumero[numero] = LeerMarca(item);
             }
 
             return resultado;
+        }
+
+        // Lee la ubicación de la marca (página + fracción 0..1) de un item de respuesta.
+        // Devuelve coordenadas null si la página no es válida o las fracciones quedan fuera de [0,1].
+        private static MarcaExtraida LeerMarca(JToken item)
+        {
+            var pagina = (int?)item["pagina"] ?? 0;
+            var x = (decimal?)item["xMarca"];
+            var y = (decimal?)item["yMarca"];
+            var dudoso = (bool?)item["dudoso"] ?? false;
+
+            var valida = pagina >= 1 && x.HasValue && y.HasValue
+                         && x.Value >= 0 && x.Value <= 1 && y.Value >= 0 && y.Value <= 1;
+            return new MarcaExtraida
+            {
+                Pagina = valida ? pagina : 0,
+                X = valida ? x : null,
+                Y = valida ? y : null,
+                Dudoso = dudoso
+            };
         }
 
         // ---- Paso 2: calificación de la transcripción contra la clave (sin el PDF) -----------

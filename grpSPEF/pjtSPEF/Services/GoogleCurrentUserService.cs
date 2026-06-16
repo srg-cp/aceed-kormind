@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Web;
 using pjtSPEF.Data;
 using pjtSPEF.Models.Entities;
@@ -6,14 +5,19 @@ using pjtSPEF.Models.Entities;
 namespace pjtSPEF.Services
 {
     // Resuelve el docente autenticado a partir de la cookie de sesión (OWIN),
-    // cuyo Name es el email obtenido del login con Google.
+    // cuyo Name es el email obtenido del login con Google. Los datos del docente
+    // (incluido el refresh token cifrado) viven en el almacén local, no en Sheets.
     public class GoogleCurrentUserService
     {
-        private readonly SpefDbContext _db;
+        private readonly LocalUserStore _store;
 
-        public GoogleCurrentUserService(SpefDbContext db)
+        public GoogleCurrentUserService() : this(new LocalUserStore())
         {
-            _db = db;
+        }
+
+        public GoogleCurrentUserService(LocalUserStore store)
+        {
+            _store = store;
         }
 
         public Usuario ObtenerUsuarioActual()
@@ -27,7 +31,8 @@ namespace pjtSPEF.Services
             if (string.IsNullOrEmpty(email))
                 return null;
 
-            return _db.Usuarios.FirstOrDefault(u => u.Email == email && u.Activo);
+            var usuario = _store.PorEmail(email);
+            return usuario != null && usuario.Activo ? usuario : null;
         }
     }
 }

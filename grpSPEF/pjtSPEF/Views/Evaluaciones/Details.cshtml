@@ -9,7 +9,8 @@
 
 @Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
 {
-    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis periodos", Url.Action("Index", "Periodos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Unidad.Curso.Periodo.Nombre, Url.Action("Details", "Periodos", new { id = examen.TipoEvaluacion.Unidad.Curso.PeriodoId })),
     new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = examen.TipoEvaluacion.Unidad.CursoId })),
     new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + examen.TipoEvaluacion.Unidad.Numero, Url.Action("Details", "Unidades", new { id = examen.TipoEvaluacion.UnidadId })),
     new pjtSPEF.Models.ViewModels.BreadcrumbItem(examen.TipoEvaluacion.Nombre, Url.Action("Details", "TiposEvaluacion", new { id = examen.TipoEvaluacionId })),
@@ -130,40 +131,67 @@
 }
 else
 {
-    <table class="table table-striped align-middle">
-        <thead>
-            <tr>
-                <th style="width: 4rem">N.º</th>
-                <th>Enunciado</th>
-                <th>Respuesta del alumno</th>
-                <th>Comentario de la IA</th>
-                <th style="width: 8rem">Puntaje</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var r in respuestas)
-            {
+    <p class="text-muted">Revisa lo que calificó la IA, ajusta la respuesta y el puntaje de cada pregunta, y pulsa <strong>Guardar calificación</strong>. Recién al guardar se archiva el PDF en Drive.</p>
+    using (Html.BeginForm("GuardarCalificacion", "Evaluaciones", FormMethod.Post, new { id = "form-guardar-calificacion" }))
+    {
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="EvaluacionId" value="@Model.Id" />
+        <table class="table table-striped align-middle">
+            <thead>
                 <tr>
-                    <td>@r.Numero</td>
-                    <td style="white-space: pre-wrap">@r.Enunciado</td>
-                    <td style="white-space: pre-wrap">@(string.IsNullOrWhiteSpace(r.RespuestaTexto) ? "(sin respuesta)" : r.RespuestaTexto)</td>
-                    <td style="white-space: pre-wrap">@r.Comentario</td>
-                    <td>@r.PuntajeObtenido.ToString("0.##") <span class="text-muted">/ @r.PuntajeMaximo.ToString("0.##")</span></td>
+                    <th style="width: 4rem">N.º</th>
+                    <th>Enunciado</th>
+                    <th>Respuesta del alumno</th>
+                    <th>Comentario de la IA</th>
+                    <th style="width: 11rem">Puntaje</th>
                 </tr>
-            }
-        </tbody>
-        <tfoot>
-            <tr>
-                <td></td>
-                <td colspan="2"></td>
-                <td class="text-end fw-bold">Total:</td>
-                <td class="fw-bold">
-                    @respuestas.Sum(r => r.PuntajeObtenido).ToString("0.##")
-                    <span class="text-muted">/ @respuestas.Sum(r => r.PuntajeMaximo).ToString("0.##")</span>
-                </td>
-            </tr>
-        </tfoot>
-    </table>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < respuestas.Count; i++)
+                {
+                    var r = respuestas[i];
+                    var maxInv = r.PuntajeMaximo.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                    <tr>
+                        <td>@r.Numero</td>
+                        <td style="white-space: pre-wrap">@r.Enunciado</td>
+                        <td>
+                            <input type="hidden" name="Respuestas[@i].Id" value="@r.Id" />
+                            <textarea name="Respuestas[@i].RespuestaTexto" class="form-control" rows="3"
+                                      placeholder="(sin respuesta)">@r.RespuestaTexto</textarea>
+                            @if (r.Dudoso)
+                            {
+                                <div class="mt-1"><span class="badge bg-warning text-dark">⚠ Marca dudosa o múltiple</span>
+                                    <span class="text-muted small">— no se dibujará el ✔/✗; revísala a mano.</span></div>
+                            }
+                        </td>
+                        <td style="white-space: pre-wrap">@r.Comentario</td>
+                        <td>
+                            <div class="input-group" style="max-width: 10rem">
+                                <input type="number" name="Respuestas[@i].PuntajeObtenido" class="form-control input-puntaje"
+                                       value="@r.PuntajeObtenido.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)"
+                                       min="0" max="@maxInv" step="0.01" required />
+                                <span class="input-group-text">/ @r.PuntajeMaximo.ToString("0.##")</span>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td></td>
+                    <td colspan="2"></td>
+                    <td class="text-end fw-bold">Total:</td>
+                    <td class="fw-bold">
+                        <span id="total-puntaje">@respuestas.Sum(r => r.PuntajeObtenido).ToString("0.##")</span>
+                        <span class="text-muted">/ @respuestas.Sum(r => r.PuntajeMaximo).ToString("0.##")</span>
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+        <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-success btn-lg">Guardar calificación</button>
+        </div>
+    }
 }
 
 @section scripts {
@@ -185,6 +213,22 @@ else
             formEditarNombre.classList.remove('d-flex');
             nombreDisplay.classList.remove('d-none');
             btnEditarNombre.classList.remove('d-none');
+        });
+
+        // Recalcula en vivo el total mientras el docente ajusta los puntajes (antes de guardar).
+        var totalPuntaje = document.getElementById('total-puntaje');
+        var inputsPuntaje = Array.prototype.slice.call(document.querySelectorAll('.input-puntaje'));
+        function recalcularTotal() {
+            var suma = 0;
+            inputsPuntaje.forEach(function (input) {
+                var v = parseFloat(input.value);
+                if (!isNaN(v)) suma += v;
+            });
+            // Hasta 2 decimales, sin ceros sobrantes.
+            totalPuntaje.textContent = parseFloat(suma.toFixed(2)).toString();
+        }
+        inputsPuntaje.forEach(function (input) {
+            input.addEventListener('input', recalcularTotal);
         });
 
         var formCalificar = document.getElementById('form-calificar');

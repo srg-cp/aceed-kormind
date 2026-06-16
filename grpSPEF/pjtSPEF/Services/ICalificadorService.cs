@@ -11,6 +11,15 @@ namespace pjtSPEF.Services
         public string RespuestaTexto { get; set; }
         public decimal PuntajeObtenido { get; set; }
         public string Comentario { get; set; }
+
+        // Ubicación (aproximada) de la marca/respuesta del alumno, para dibujar el ✔/✗ encima del PDF.
+        // Pagina es 1-based; MarcaX/MarcaY son fracciones 0..1 desde la esquina superior izquierda
+        // de esa página. Quedan null si la IA no ubicó una marca clara (p. ej. pregunta en blanco).
+        public int Pagina { get; set; }
+        public decimal? MarcaX { get; set; }
+        public decimal? MarcaY { get; set; }
+        // true si el alumno marcó más de una opción o la marca es ambigua: no se dibuja, solo se avisa.
+        public bool Dudoso { get; set; }
     }
 
     public class ResultadoCalificacion

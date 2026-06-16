@@ -1,7 +1,4 @@
 using System;
-using System.Data.Entity;
-using System.Data.Entity.Infrastructure;
-using System.Linq;
 using System.Web.Mvc;
 using pjtSPEF.Data;
 using pjtSPEF.Models.Entities;
@@ -12,58 +9,54 @@ namespace pjtSPEF.Controllers
 {
     public class UnidadesController : Controller
     {
-        private readonly SpefDbContext _db;
         private readonly GoogleCurrentUserService _currentUser;
+        private readonly SpefSheetStore _store;
         private readonly DriveStorageService _storage;
 
         public UnidadesController()
         {
-            _db = new SpefDbContext();
-            _currentUser = new GoogleCurrentUserService(_db);
+            _currentUser = new GoogleCurrentUserService();
+            _store = new SpefSheetStore(_currentUser);
             _storage = new DriveStorageService(_currentUser);
         }
 
         public ActionResult Details(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var unidad = _db.Unidades
-                .Include(u => u.Curso)
-                .Include(u => u.TiposEvaluacion)
-                .FirstOrDefault(u => u.Id == id && u.Curso.UsuarioId == usuario.Id);
-            if (unidad == null)
+            var unidad = _store.UnidadConCadena(id);
+            if (unidad == null || unidad.Curso == null)
                 return HttpNotFound();
 
+            unidad.TiposEvaluacion = _store.TiposDeUnidad(id);
             return View(unidad);
         }
 
         [HttpGet]
         public ActionResult Create(int cursoId)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var curso = _db.Cursos.FirstOrDefault(c => c.Id == cursoId && c.UsuarioId == usuario.Id);
+            var curso = _store.CursoConPeriodo(cursoId);
             if (curso == null)
                 return HttpNotFound();
 
-            var siguienteNumero = _db.Unidades.Where(u => u.CursoId == cursoId).Select(u => (int?)u.Numero).Max() ?? 0;
+            var unidades = _store.UnidadesDeCurso(cursoId);
+            var siguienteNumero = unidades.Count == 0 ? 1 : unidades[unidades.Count - 1].Numero + 1;
             ViewBag.Curso = curso;
-            return View(new UnidadFormViewModel { CursoId = cursoId, Numero = siguienteNumero + 1 });
+            return View(new UnidadFormViewModel { CursoId = cursoId, Numero = siguienteNumero });
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
         public ActionResult Create(UnidadFormViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var curso = _db.Cursos.FirstOrDefault(c => c.Id == model.CursoId && c.UsuarioId == usuario.Id);
+            var curso = _store.CursoConPeriodo(model.CursoId);
             if (curso == null)
                 return HttpNotFound();
 
@@ -74,15 +67,13 @@ namespace pjtSPEF.Controllers
                 return View(model);
             }
 
-            var unidad = new Unidad
+            _store.AgregarUnidad(new Unidad
             {
                 CursoId = curso.Id,
                 Numero = model.Numero.Value,
                 Nombre = model.Nombre.Trim(),
                 FechaCreacion = DateTime.UtcNow
-            };
-            _db.Unidades.Add(unidad);
-            _db.SaveChanges();
+            });
 
             return RedirectToAction("Details", "Cursos", new { id = curso.Id });
         }
@@ -90,14 +81,11 @@ namespace pjtSPEF.Controllers
         [HttpGet]
         public ActionResult Edit(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var unidad = _db.Unidades
-                .Include(u => u.Curso)
-                .FirstOrDefault(u => u.Id == id && u.Curso.UsuarioId == usuario.Id);
-            if (unidad == null)
+            var unidad = _store.UnidadConCadena(id);
+            if (unidad == null || unidad.Curso == null)
                 return HttpNotFound();
 
             ViewBag.Curso = unidad.Curso;
@@ -114,14 +102,11 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Edit(int id, UnidadFormViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var unidad = _db.Unidades
-                .Include(u => u.Curso)
-                .FirstOrDefault(u => u.Id == id && u.Curso.UsuarioId == usuario.Id);
-            if (unidad == null)
+            var unidad = _store.UnidadConCadena(id);
+            if (unidad == null || unidad.Curso == null)
                 return HttpNotFound();
 
             model.Id = id;
@@ -135,7 +120,7 @@ namespace pjtSPEF.Controllers
 
             unidad.Numero = model.Numero.Value;
             unidad.Nombre = model.Nombre.Trim();
-            _db.SaveChanges();
+            _store.ActualizarUnidad(unidad);
 
             return RedirectToAction("Details", "Cursos", new { id = unidad.CursoId });
         }
@@ -144,52 +129,30 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Delete(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var unidad = _db.Unidades
-                .Include(u => u.Curso)
-                .FirstOrDefault(u => u.Id == id && u.Curso.UsuarioId == usuario.Id);
+            var unidad = _store.Unidad(id);
             if (unidad == null)
                 return HttpNotFound();
 
             var cursoId = unidad.CursoId;
-            var archivos = _db.ExamenesBase
-                .Where(e => e.TipoEvaluacion.UnidadId == id && e.ArchivoRef != null)
-                .Select(e => e.ArchivoRef)
-                .ToList();
-
-            _db.Unidades.Remove(unidad);
-            _db.SaveChanges();
-
+            var archivos = _store.EliminarUnidad(id);
             foreach (var archivo in archivos)
                 _storage.Eliminar(archivo);
 
             return RedirectToAction("Details", "Cursos", new { id = cursoId });
         }
 
-        // La restricción UNIQUE(curso_id, numero) existe en la BD; se valida aquí
-        // para dar un mensaje claro en el formulario en lugar de un error 500.
+        // El número de unidad debe ser único dentro del curso; se valida aquí para dar
+        // un mensaje claro en el formulario en lugar de un error genérico.
         private void ValidarNumeroUnico(UnidadFormViewModel model)
         {
             if (!model.Numero.HasValue)
                 return;
 
-            var duplicado = _db.Unidades.Any(u =>
-                u.CursoId == model.CursoId &&
-                u.Numero == model.Numero.Value &&
-                (!model.Id.HasValue || u.Id != model.Id.Value));
-
-            if (duplicado)
+            if (_store.ExisteUnidadNumero(model.CursoId, model.Numero.Value, model.Id))
                 ModelState.AddModelError("Numero", "Ya existe una unidad con ese número en este curso.");
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-                _db.Dispose();
-            base.Dispose(disposing);
         }
     }
 }

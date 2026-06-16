@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
@@ -13,15 +12,15 @@ namespace pjtSPEF.Controllers
 {
     public class CalibracionController : Controller
     {
-        private readonly SpefDbContext _db;
         private readonly GoogleCurrentUserService _currentUser;
+        private readonly SpefSheetStore _store;
         private readonly DriveStorageService _storage;
         private readonly GeminiExtractorClaveService _extractor;
 
         public CalibracionController()
         {
-            _db = new SpefDbContext();
-            _currentUser = new GoogleCurrentUserService(_db);
+            _currentUser = new GoogleCurrentUserService();
+            _store = new SpefSheetStore(_currentUser);
             _storage = new DriveStorageService(_currentUser);
             _extractor = new GeminiExtractorClaveService();
         }
@@ -29,27 +28,17 @@ namespace pjtSPEF.Controllers
         [HttpGet]
         public ActionResult Calibrar(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(id, usuario.Id);
+            var examen = CargarExamen(id);
             if (examen == null)
                 return HttpNotFound();
 
             var model = new CalibracionViewModel
             {
                 ExamenBaseId = examen.Id,
-                Preguntas = examen.PreguntasClave
-                    .OrderBy(p => p.Numero)
-                    .Select(p => new PreguntaClaveFormViewModel
-                    {
-                        Numero = p.Numero,
-                        Enunciado = p.Enunciado,
-                        RespuestaEsperada = p.RespuestaEsperada,
-                        Puntaje = p.Puntaje
-                    })
-                    .ToList()
+                Preguntas = AGrilla(examen.PreguntasClave)
             };
 
             ViewBag.Examen = examen;
@@ -62,11 +51,10 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public async Task<ActionResult> Extraer(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(id, usuario.Id);
+            var examen = CargarExamen(id);
             if (examen == null)
                 return HttpNotFound();
 
@@ -95,16 +83,7 @@ namespace pjtSPEF.Controllers
             {
                 TempData["Error"] = resultado.Error;
                 // Conservar lo que ya hubiera guardado para no perder trabajo del docente.
-                model.Preguntas = examen.PreguntasClave
-                    .OrderBy(p => p.Numero)
-                    .Select(p => new PreguntaClaveFormViewModel
-                    {
-                        Numero = p.Numero,
-                        Enunciado = p.Enunciado,
-                        RespuestaEsperada = p.RespuestaEsperada,
-                        Puntaje = p.Puntaje
-                    })
-                    .ToList();
+                model.Preguntas = AGrilla(examen.PreguntasClave);
             }
             else
             {
@@ -130,11 +109,10 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Guardar(CalibracionViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(model.ExamenBaseId, usuario.Id);
+            var examen = CargarExamen(model.ExamenBaseId);
             if (examen == null)
                 return HttpNotFound();
 
@@ -156,7 +134,6 @@ namespace pjtSPEF.Controllers
 
             if (!ModelState.IsValid)
             {
-                // Renumerar para mostrar la grilla consistente tras el round-trip.
                 for (var i = 0; i < preguntas.Count; i++)
                     preguntas[i].Numero = i + 1;
                 model.Preguntas = preguntas;
@@ -165,10 +142,10 @@ namespace pjtSPEF.Controllers
             }
 
             // La clave se reemplaza completa: lo que está en la grilla es la verdad.
-            _db.PreguntasClave.RemoveRange(examen.PreguntasClave);
+            var nuevas = new List<PreguntaClave>();
             for (var i = 0; i < preguntas.Count; i++)
             {
-                _db.PreguntasClave.Add(new PreguntaClave
+                nuevas.Add(new PreguntaClave
                 {
                     ExamenBaseId = examen.Id,
                     Numero = i + 1,
@@ -178,29 +155,40 @@ namespace pjtSPEF.Controllers
                     FechaCreacion = DateTime.UtcNow
                 });
             }
+            _store.ReemplazarClave(examen.Id, nuevas);
 
             if (examen.Estado == EstadoExamen.Borrador)
                 examen.Estado = EstadoExamen.Calibrado;
             examen.FechaModificacion = DateTime.UtcNow;
-            _db.SaveChanges();
+            _store.ActualizarExamen(examen);
 
             TempData["Exito"] = "Clave guardada. El examen quedó calibrado.";
             return RedirectToAction("Details", "ExamenesBase", new { id = examen.Id });
         }
 
-        private ExamenBase BuscarExamenDelUsuario(int id, int usuarioId)
+        // Carga el examen con su cadena (para el breadcrumb) y su clave actual.
+        private ExamenBase CargarExamen(int id)
         {
-            return _db.ExamenesBase
-                .Include(e => e.TipoEvaluacion.Unidad.Curso)
-                .Include(e => e.PreguntasClave)
-                .FirstOrDefault(e => e.Id == id && e.TipoEvaluacion.Unidad.Curso.UsuarioId == usuarioId);
+            var examen = _store.ExamenConCadena(id);
+            if (examen == null || examen.TipoEvaluacion == null
+                || examen.TipoEvaluacion.Unidad == null || examen.TipoEvaluacion.Unidad.Curso == null)
+                return null;
+            examen.PreguntasClave = _store.PreguntasDeExamen(id);
+            return examen;
         }
 
-        protected override void Dispose(bool disposing)
+        private static List<PreguntaClaveFormViewModel> AGrilla(IEnumerable<PreguntaClave> preguntas)
         {
-            if (disposing)
-                _db.Dispose();
-            base.Dispose(disposing);
+            return (preguntas ?? Enumerable.Empty<PreguntaClave>())
+                .OrderBy(p => p.Numero)
+                .Select(p => new PreguntaClaveFormViewModel
+                {
+                    Numero = p.Numero,
+                    Enunciado = p.Enunciado,
+                    RespuestaEsperada = p.RespuestaEsperada,
+                    Puntaje = p.Puntaje
+                })
+                .ToList();
         }
     }
 }

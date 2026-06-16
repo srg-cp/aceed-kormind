@@ -1,5 +1,6 @@
 using System;
-using System.Data.Entity;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -15,17 +16,19 @@ namespace pjtSPEF.Controllers
     // calificarlos con IA contra la clave y revisar el detalle por pregunta.
     public class EvaluacionesController : Controller
     {
-        private readonly SpefDbContext _db;
         private readonly GoogleCurrentUserService _currentUser;
+        private readonly SpefSheetStore _store;
         private readonly DriveStorageService _storage;
         private readonly PdfPigValidationService _pdfValidator;
+        private readonly PdfSelloService _sello;
 
         public EvaluacionesController()
         {
-            _db = new SpefDbContext();
-            _currentUser = new GoogleCurrentUserService(_db);
+            _currentUser = new GoogleCurrentUserService();
+            _store = new SpefSheetStore(_currentUser);
             _storage = new DriveStorageService(_currentUser);
             _pdfValidator = new PdfPigValidationService();
+            _sello = new PdfSelloService();
         }
 
         // Cada entrega se califica con el proveedor que el usuario eligió (botón Gemini/Claude).
@@ -43,25 +46,24 @@ namespace pjtSPEF.Controllers
         // Lista de entregas de un examen base.
         public ActionResult Index(int examenBaseId)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(examenBaseId, usuario.Id);
+            var examen = CargarExamen(examenBaseId);
             if (examen == null)
                 return HttpNotFound();
 
+            examen.Evaluaciones = _store.EvaluacionesDeExamen(examenBaseId);
             return View(examen);
         }
 
         [HttpGet]
         public ActionResult Subir(int examenBaseId)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(examenBaseId, usuario.Id);
+            var examen = CargarExamen(examenBaseId);
             if (examen == null)
                 return HttpNotFound();
 
@@ -73,11 +75,10 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Subir(SubirEvaluacionesViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(model.ExamenBaseId, usuario.Id);
+            var examen = CargarExamen(model.ExamenBaseId);
             if (examen == null)
                 return HttpNotFound();
 
@@ -117,25 +118,22 @@ namespace pjtSPEF.Controllers
                     return View(model);
                 }
 
-                var evaluacion = new EvaluacionEstudiante
-                {
-                    ExamenBaseId = examen.Id,
-                    NombreEstudiante = Path.GetFileNameWithoutExtension(archivo.FileName),
-                    ArchivoRef = archivoRef,
-                    ArchivoNombreOriginal = Path.GetFileName(archivo.FileName),
-                    TotalPaginas = validacion.TotalPaginas,
-                    Estado = EstadoEvaluacion.Pendiente,
-                    FechaCreacion = DateTime.UtcNow
-                };
-
                 try
                 {
-                    _db.EvaluacionesEstudiante.Add(evaluacion);
-                    _db.SaveChanges();
+                    _store.AgregarEvaluacion(new EvaluacionEstudiante
+                    {
+                        ExamenBaseId = examen.Id,
+                        NombreEstudiante = Path.GetFileNameWithoutExtension(archivo.FileName),
+                        ArchivoRef = archivoRef,
+                        ArchivoNombreOriginal = Path.GetFileName(archivo.FileName),
+                        TotalPaginas = validacion.TotalPaginas,
+                        Estado = EstadoEvaluacion.Pendiente,
+                        FechaCreacion = DateTime.UtcNow
+                    });
                 }
                 catch
                 {
-                    // Compensación: no dejar el archivo huérfano si no se registró en BD.
+                    // Compensación: no dejar el archivo huérfano si no se registró.
                     _storage.Eliminar(archivoRef);
                     throw;
                 }
@@ -149,11 +147,10 @@ namespace pjtSPEF.Controllers
 
         public ActionResult Details(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var evaluacion = BuscarEvaluacionDelUsuario(id, usuario.Id);
+            var evaluacion = CargarEvaluacion(id);
             if (evaluacion == null)
                 return HttpNotFound();
 
@@ -165,31 +162,37 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public async Task<ActionResult> Calificar(int id, string proveedor)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var evaluacion = BuscarEvaluacionDelUsuario(id, usuario.Id);
+            var evaluacion = CargarEvaluacion(id);
             if (evaluacion == null)
                 return HttpNotFound();
 
             var examen = evaluacion.ExamenBase;
-            if (!examen.PreguntasClave.Any())
+            if (examen.PreguntasClave == null || !examen.PreguntasClave.Any())
             {
                 TempData["Error"] = "El examen base no tiene clave calibrada. Calíbrala antes de calificar.";
                 return RedirectToAction("Details", new { id });
             }
 
             var ia = ProveedorIaExtensions.Parsear(proveedor);
-            if (await CalificarEvaluacion(evaluacion, examen, ia))
+            var calificada = await CalificarEvaluacion(evaluacion, examen, ia);
+
+            // Una (re)calificación de la IA deja la entrega pendiente de revisión del docente:
+            // el PDF permanece (o vuelve) en entregas/ hasta que se pulse GUARDAR. Recién ahí
+            // se archiva en calificados/ (ver GuardarCalificacion).
+            MoverEntrega(evaluacion, RutaStorage.Entregas(examen));
+
+            if (calificada)
             {
                 if (examen.Estado == EstadoExamen.Calibrado)
                 {
                     examen.Estado = EstadoExamen.Activo;
                     examen.FechaModificacion = DateTime.UtcNow;
-                    _db.SaveChanges();
+                    _store.ActualizarExamen(examen);
                 }
-                TempData["Exito"] = "Entrega calificada con " + ia.Nombre() + ".";
+                TempData["Exito"] = "Entrega calificada con " + ia.Nombre() + ". Revisa el detalle y pulsa Guardar para archivarla.";
             }
             else
             {
@@ -204,11 +207,10 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult EditarNombre(int id, string nombreEstudiante)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var evaluacion = BuscarEvaluacionDelUsuario(id, usuario.Id);
+            var evaluacion = _store.Evaluacion(id);
             if (evaluacion == null)
                 return HttpNotFound();
 
@@ -220,18 +222,77 @@ namespace pjtSPEF.Controllers
             }
 
             evaluacion.NombreEstudiante = nombreEstudiante;
-            _db.SaveChanges();
+            _store.ActualizarEvaluacion(evaluacion);
             TempData["Exito"] = "Nombre actualizado.";
             return RedirectToAction("Details", new { id });
         }
 
-        public ActionResult Descargar(int id)
+        // Guarda en bloque las correcciones del docente (transcripción + puntaje de cada pregunta)
+        // y recién aquí archiva la entrega: el PDF pasa de entregas/ a calificados/ en Drive.
+        // El puntaje de cada pregunta se valida en servidor contra su PuntajeMaximo (clave calibrada).
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public ActionResult GuardarCalificacion(GuardarCalificacionViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var evaluacion = BuscarEvaluacionDelUsuario(id, usuario.Id);
+            var evaluacion = CargarEvaluacion(model.EvaluacionId);
+            if (evaluacion == null)
+                return HttpNotFound();
+
+            var respuestas = _store.RespuestasDeEvaluacion(model.EvaluacionId);
+            if (respuestas.Count == 0)
+            {
+                TempData["Error"] = "No hay detalle que guardar. Califica la entrega primero.";
+                return RedirectToAction("Details", new { id = model.EvaluacionId });
+            }
+
+            var porId = respuestas.ToDictionary(r => r.Id);
+            var ediciones = model.Respuestas ?? new List<RespuestaEditViewModel>();
+
+            // 1) Validar todos los puntajes antes de tocar nada (no se guarda parcialmente).
+            foreach (var edit in ediciones)
+            {
+                if (!porId.TryGetValue(edit.Id, out var actual))
+                    continue;
+                if (edit.PuntajeObtenido < 0 || edit.PuntajeObtenido > actual.PuntajeMaximo)
+                {
+                    TempData["Error"] = string.Format(
+                        "El puntaje de la pregunta {0} debe estar entre 0 y {1} (lo permitido por la clave del examen).",
+                        actual.Numero, actual.PuntajeMaximo.ToString("0.##"));
+                    return RedirectToAction("Details", new { id = model.EvaluacionId });
+                }
+            }
+
+            // 2) Aplicar las ediciones sobre el detalle existente.
+            foreach (var edit in ediciones)
+            {
+                if (!porId.TryGetValue(edit.Id, out var actual))
+                    continue;
+                actual.RespuestaTexto = (edit.RespuestaTexto ?? string.Empty).Trim();
+                actual.PuntajeObtenido = edit.PuntajeObtenido;
+            }
+
+            // 3) Persistir el detalle y recalcular la nota total.
+            _store.ReemplazarRespuestas(model.EvaluacionId, respuestas);
+            evaluacion.NotaTotal = respuestas.Sum(r => r.PuntajeObtenido);
+            _store.ActualizarEvaluacion(evaluacion);
+
+            // 4) Sellar la nota + los ✔/✗ sobre el PDF y archivarlo: entregas/ -> calificados/.
+            EstamparNota(evaluacion, respuestas);
+            MoverEntrega(evaluacion, RutaStorage.Calificados(evaluacion.ExamenBase));
+
+            TempData["Exito"] = "Calificación guardada y archivada en Drive.";
+            return RedirectToAction("Details", new { id = model.EvaluacionId });
+        }
+
+        public ActionResult Descargar(int id)
+        {
+            if (_currentUser.ObtenerUsuarioActual() == null)
+                return RedirectToAction("Login", "Account");
+
+            var evaluacion = _store.Evaluacion(id);
             if (evaluacion == null || string.IsNullOrEmpty(evaluacion.ArchivoRef))
                 return HttpNotFound();
 
@@ -245,20 +306,17 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Delete(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var evaluacion = BuscarEvaluacionDelUsuario(id, usuario.Id);
+            var evaluacion = _store.Evaluacion(id);
             if (evaluacion == null)
                 return HttpNotFound();
 
             var examenBaseId = evaluacion.ExamenBaseId;
-            var archivo = evaluacion.ArchivoRef;
-
-            _db.EvaluacionesEstudiante.Remove(evaluacion);
-            _db.SaveChanges();
-            _storage.Eliminar(archivo);
+            var archivos = _store.EliminarEvaluacion(id);
+            foreach (var archivo in archivos)
+                _storage.Eliminar(archivo);
 
             return RedirectToAction("Index", new { examenBaseId });
         }
@@ -268,12 +326,13 @@ namespace pjtSPEF.Controllers
         private async Task<bool> CalificarEvaluacion(EvaluacionEstudiante evaluacion, ExamenBase examen, ProveedorIa proveedor)
         {
             var calificador = CrearCalificador(proveedor);
+            var clave = examen.PreguntasClave.ToList();
             ResultadoCalificacion resultado;
             try
             {
                 using (var pdf = _storage.Abrir(evaluacion.ArchivoRef))
                 {
-                    resultado = await calificador.CalificarAsync(pdf, examen.PreguntasClave.ToList());
+                    resultado = await calificador.CalificarAsync(pdf, clave);
                 }
             }
             catch (DriveNoAutorizadoException ex)
@@ -281,26 +340,25 @@ namespace pjtSPEF.Controllers
                 resultado = ResultadoCalificacion.Fallo(ex.Message);
             }
 
-            // Se reemplaza el detalle anterior (re-calificación): la última corrida manda.
-            if (evaluacion.Respuestas != null && evaluacion.Respuestas.Count > 0)
-                _db.RespuestasEstudiante.RemoveRange(evaluacion.Respuestas);
-
             if (!resultado.Exito)
             {
+                // Se descarta el detalle anterior (re-calificación fallida).
+                _store.ReemplazarRespuestas(evaluacion.Id, new List<RespuestaEstudiante>());
                 evaluacion.Estado = EstadoEvaluacion.Error;
                 evaluacion.MensajeError = resultado.Error;
                 evaluacion.NotaTotal = null;
                 evaluacion.FechaCalificacion = null;
-                _db.SaveChanges();
+                _store.ActualizarEvaluacion(evaluacion);
                 return false;
             }
 
-            var clavePorNumero = examen.PreguntasClave.ToDictionary(p => p.Numero);
+            var clavePorNumero = clave.ToDictionary(p => p.Numero);
+            var nuevas = new List<RespuestaEstudiante>();
             decimal notaTotal = 0;
             foreach (var r in resultado.Respuestas)
             {
                 clavePorNumero.TryGetValue(r.Numero, out var pregunta);
-                _db.RespuestasEstudiante.Add(new RespuestaEstudiante
+                nuevas.Add(new RespuestaEstudiante
                 {
                     EvaluacionEstudianteId = evaluacion.Id,
                     Numero = r.Numero,
@@ -309,10 +367,16 @@ namespace pjtSPEF.Controllers
                     PuntajeMaximo = pregunta?.Puntaje ?? 0,
                     PuntajeObtenido = r.PuntajeObtenido,
                     Comentario = r.Comentario,
+                    Pagina = r.Pagina >= 1 ? r.Pagina : (int?)null,
+                    MarcaX = r.MarcaX,
+                    MarcaY = r.MarcaY,
+                    Dudoso = r.Dudoso,
                     FechaCreacion = DateTime.UtcNow
                 });
                 notaTotal += r.PuntajeObtenido;
             }
+            // La última corrida manda: se reemplaza el detalle por completo.
+            _store.ReemplazarRespuestas(evaluacion.Id, nuevas);
 
             // Si la IA detectó el nombre y el actual sigue siendo el placeholder del archivo,
             // usar el detectado. Nunca pisamos un nombre que el docente haya editado a mano.
@@ -326,8 +390,83 @@ namespace pjtSPEF.Controllers
             evaluacion.Estado = EstadoEvaluacion.Calificada;
             evaluacion.MensajeError = null;
             evaluacion.FechaCalificacion = DateTime.UtcNow;
-            _db.SaveChanges();
+            _store.ActualizarEvaluacion(evaluacion);
             return true;
+        }
+
+        // Estampa la nota (obtenido / máximo) y los ✔/✗ por pregunta sobre el PDF de la entrega,
+        // conservando su Id en Drive. Best-effort: si falla (PDF ilegible, Drive caído, etc.)
+        // no rompe el guardado de la nota.
+        private void EstamparNota(EvaluacionEstudiante evaluacion, IList<RespuestaEstudiante> respuestas)
+        {
+            if (string.IsNullOrEmpty(evaluacion.ArchivoRef) || evaluacion.ExamenBase == null)
+                return;
+            try
+            {
+                var texto = string.Format(CultureInfo.InvariantCulture, "{0:0.##} / {1:0.##}",
+                    evaluacion.NotaTotal ?? 0m, evaluacion.ExamenBase.NotaMaxima);
+
+                var marcas = ConstruirMarcas(respuestas);
+
+                byte[] sellado;
+                using (var original = _storage.Abrir(evaluacion.ArchivoRef))
+                {
+                    sellado = _sello.Estampar(original, texto, marcas);
+                }
+                using (var ms = new MemoryStream(sellado))
+                {
+                    _storage.ReemplazarContenido(evaluacion.ArchivoRef, ms);
+                }
+            }
+            catch
+            {
+                // El sello es secundario; la calificación ya quedó guardada.
+            }
+        }
+
+        // Arma las marcas a dibujar: solo las que tienen ubicación válida y NO son dudosas
+        // (las marcas múltiples/ambiguas no se dibujan; solo se avisan en pantalla).
+        private static List<MarcaVisto> ConstruirMarcas(IList<RespuestaEstudiante> respuestas)
+        {
+            var marcas = new List<MarcaVisto>();
+            foreach (var r in respuestas)
+            {
+                if (r.Dudoso || !r.Pagina.HasValue || r.Pagina.Value < 1 || !r.MarcaX.HasValue || !r.MarcaY.HasValue)
+                    continue;
+
+                VistoEstado estado;
+                if (r.PuntajeMaximo > 0 && r.PuntajeObtenido >= r.PuntajeMaximo)
+                    estado = VistoEstado.Correcto;
+                else if (r.PuntajeObtenido <= 0)
+                    estado = VistoEstado.Incorrecto;
+                else
+                    estado = VistoEstado.Parcial;
+
+                marcas.Add(new MarcaVisto
+                {
+                    Pagina = r.Pagina.Value,
+                    X = (double)r.MarcaX.Value,
+                    Y = (double)r.MarcaY.Value,
+                    Estado = estado
+                });
+            }
+            return marcas;
+        }
+
+        // Mueve el PDF de la entrega a la carpeta destino (entregas/ o calificados/) en Drive.
+        // Best-effort: cualquier fallo se ignora para no romper el flujo de calificación.
+        private void MoverEntrega(EvaluacionEstudiante evaluacion, string categoriaDestino)
+        {
+            if (string.IsNullOrEmpty(evaluacion.ArchivoRef))
+                return;
+            try
+            {
+                _storage.Mover(evaluacion.ArchivoRef, categoriaDestino);
+            }
+            catch
+            {
+                // El movimiento de carpeta es secundario; la calificación ya quedó registrada.
+            }
         }
 
         private static string ConstruirResumen(int subidos, int conError)
@@ -338,29 +477,27 @@ namespace pjtSPEF.Controllers
             return resumen;
         }
 
-        private ExamenBase BuscarExamenDelUsuario(int id, int usuarioId)
+        // Examen con su cadena (para breadcrumb) y su clave (para saber si se puede calificar).
+        private ExamenBase CargarExamen(int id)
         {
-            return _db.ExamenesBase
-                .Include(e => e.TipoEvaluacion.Unidad.Curso)
-                .Include(e => e.PreguntasClave)
-                .Include(e => e.Evaluaciones)
-                .FirstOrDefault(e => e.Id == id && e.TipoEvaluacion.Unidad.Curso.UsuarioId == usuarioId);
+            var examen = _store.ExamenConCadena(id);
+            if (examen == null || examen.TipoEvaluacion == null
+                || examen.TipoEvaluacion.Unidad == null || examen.TipoEvaluacion.Unidad.Curso == null)
+                return null;
+            examen.PreguntasClave = _store.PreguntasDeExamen(id);
+            return examen;
         }
 
-        private EvaluacionEstudiante BuscarEvaluacionDelUsuario(int id, int usuarioId)
+        // Entrega con su examen (cadena + clave) y su detalle por pregunta.
+        private EvaluacionEstudiante CargarEvaluacion(int id)
         {
-            return _db.EvaluacionesEstudiante
-                .Include(e => e.Respuestas)
-                .Include(e => e.ExamenBase.PreguntasClave)
-                .Include(e => e.ExamenBase.TipoEvaluacion.Unidad.Curso)
-                .FirstOrDefault(e => e.Id == id && e.ExamenBase.TipoEvaluacion.Unidad.Curso.UsuarioId == usuarioId);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-                _db.Dispose();
-            base.Dispose(disposing);
+            var evaluacion = _store.EvaluacionConCadena(id);
+            if (evaluacion == null || evaluacion.ExamenBase == null
+                || evaluacion.ExamenBase.TipoEvaluacion == null
+                || evaluacion.ExamenBase.TipoEvaluacion.Unidad == null
+                || evaluacion.ExamenBase.TipoEvaluacion.Unidad.Curso == null)
+                return null;
+            return evaluacion;
         }
     }
 }

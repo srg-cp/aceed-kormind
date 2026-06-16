@@ -3,11 +3,12 @@ using pjtSPEF.Models.Entities;
 namespace pjtSPEF.Services
 {
     // Construye la ruta de carpetas (separadas por '/') que se le pasa a DriveStorageService
-    // como "categoria", espejando la jerarquía del sistema: Curso > Unidad > Tipo > Examen.
-    // En Drive cuelga de la carpeta raíz ACEED; en local, de App_Data/storage.
+    // como "categoria", espejando la jerarquía del sistema: Periodo > Curso > Unidad > Tipo > Examen.
+    // En Drive cuelga de la carpeta raíz ACEED.
     public static class RutaStorage
     {
         private const string SubcarpetaEntregas = "entregas";
+        private const string SubcarpetaCalificados = "calificados";
 
         // Carpeta donde vive el PDF del examen base.
         public static string ExamenBase(TipoEvaluacion tipo, string tituloExamen)
@@ -21,25 +22,29 @@ namespace pjtSPEF.Services
             return Sanitizar(tituloExamen);
         }
 
-        // Carpeta donde viven las entregas de los estudiantes de un examen base.
+        // Carpeta donde viven las entregas de los estudiantes de un examen base (sin calificar).
         public static string Entregas(ExamenBase examen)
         {
             return Combinar(RutaDelTipo(examen.TipoEvaluacion), Sanitizar(examen.Titulo), SubcarpetaEntregas);
+        }
+
+        // Carpeta donde se mueve el PDF de una entrega una vez calificada con éxito.
+        public static string Calificados(ExamenBase examen)
+        {
+            return Combinar(RutaDelTipo(examen.TipoEvaluacion), Sanitizar(examen.Titulo), SubcarpetaCalificados);
         }
 
         private static string RutaDelTipo(TipoEvaluacion tipo)
         {
             var unidad = tipo.Unidad;
             var curso = unidad.Curso;
-            return Combinar(NombreCurso(curso), NombreUnidad(unidad), Sanitizar(tipo.Nombre));
+            // El periodo es ahora la raíz de la jerarquía, así que encabeza la ruta en Drive.
+            return Combinar(NombrePeriodo(curso.Periodo), Sanitizar(curso.Nombre), NombreUnidad(unidad), Sanitizar(tipo.Nombre));
         }
 
-        private static string NombreCurso(Curso curso)
+        private static string NombrePeriodo(Periodo periodo)
         {
-            var nombre = Sanitizar(curso.Nombre);
-            return string.IsNullOrWhiteSpace(curso.Periodo)
-                ? nombre
-                : nombre + " (" + Sanitizar(curso.Periodo) + ")";
+            return Sanitizar(periodo != null ? periodo.Nombre : "sin-periodo");
         }
 
         private static string NombreUnidad(Unidad unidad)

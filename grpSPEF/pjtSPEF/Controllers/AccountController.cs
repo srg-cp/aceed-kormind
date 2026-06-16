@@ -28,7 +28,7 @@ namespace pjtSPEF.Controllers
         public ActionResult Login(string returnUrl)
         {
             if (User != null && User.Identity.IsAuthenticated)
-                return RedirectToAction("Index", "Cursos");
+                return RedirectToAction("Index", "Periodos");
 
             ViewBag.ReturnUrl = returnUrl;
             return View();
@@ -63,26 +63,21 @@ namespace pjtSPEF.Controllers
                 return RedirectToAction("Login");
             }
 
-            using (var db = new SpefDbContext())
-            {
-                var usuario = db.Usuarios.FirstOrDefault(u => u.GoogleId == googleId)
-                              ?? db.Usuarios.FirstOrDefault(u => u.Email == email);
-                if (usuario == null)
-                {
-                    usuario = new Usuario { FechaCreacion = DateTime.UtcNow };
-                    db.Usuarios.Add(usuario);
-                }
+            var store = new LocalUserStore();
+            var usuario = store.PorGoogleId(googleId)
+                          ?? store.PorEmail(email)
+                          ?? new Usuario { FechaCreacion = DateTime.UtcNow };
 
-                usuario.Email = email;
-                usuario.GoogleId = googleId;
-                usuario.Nombre = string.IsNullOrWhiteSpace(nombre) ? email : nombre;
-                usuario.Activo = true;
-                // Solo se sobrescribe si Google mandó uno nuevo (con prompt=consent siempre llega).
-                if (!string.IsNullOrEmpty(refreshToken))
-                    usuario.RefreshToken = TokenProtector.Proteger(refreshToken);
+            usuario.Email = email;
+            usuario.GoogleId = googleId;
+            usuario.Nombre = string.IsNullOrWhiteSpace(nombre) ? email : nombre;
+            usuario.Activo = true;
+            // Solo se sobrescribe si Google mandó uno nuevo (con prompt=consent siempre llega).
+            if (!string.IsNullOrEmpty(refreshToken))
+                usuario.RefreshToken = TokenProtector.Proteger(refreshToken);
 
-                db.SaveChanges();
-            }
+            // El SpreadsheetId (si ya existe) se conserva; se crea perezosamente al primer uso.
+            store.Guardar(usuario);
 
             Authentication.SignOut(AuthClaims.ExternalCookie);
 
@@ -95,7 +90,7 @@ namespace pjtSPEF.Controllers
 
             if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
                 return Redirect(returnUrl);
-            return RedirectToAction("Index", "Cursos");
+            return RedirectToAction("Index", "Periodos");
         }
 
         [HttpPost]

@@ -5,17 +5,15 @@
 
 @Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
 {
-    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis periodos", Url.Action("Index", "Periodos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.Periodo.Nombre, Url.Action("Details", "Periodos", new { id = Model.PeriodoId })),
     new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.Nombre)
 })
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h2 class="mb-0">@Model.Nombre</h2>
-        @if (!string.IsNullOrEmpty(Model.Periodo))
-        {
-            <span class="text-muted">Periodo: @Model.Periodo</span>
-        }
+        <span class="text-muted">Periodo: @Model.Periodo.Nombre</span>
     </div>
     <div>
         <a href="@Url.Action("Edit", new { id = Model.Id })" class="btn btn-outline-secondary">Editar curso</a>

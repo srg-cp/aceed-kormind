@@ -8,6 +8,8 @@
 # Build
 [Bb]in/
 [Oo]bj/
+# Salida de precompilación de aspnet_compiler (artefacto, no se versiona)
+_program files_git/
 
 # NuGet (estilo packages.config: los paquetes no se versionan)
 packages/
@@ -21,6 +23,8 @@ Secrets.config
 
 # Datos locales de la aplicación
 grpSPEF/pjtSPEF/App_Data/storage/
+# Almacén local de auth (usuarios + refresh token cifrado): es runtime, no se versiona
+grpSPEF/pjtSPEF/App_Data/*.json
 *.mdf
 *.ldf
 

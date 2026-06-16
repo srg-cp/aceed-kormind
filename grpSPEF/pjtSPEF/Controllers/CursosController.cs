@@ -1,7 +1,4 @@
 using System;
-using System.Data.Entity;
-using System.Linq;
-using System.Net;
 using System.Web.Mvc;
 using pjtSPEF.Data;
 using pjtSPEF.Models.Entities;
@@ -10,73 +7,70 @@ using pjtSPEF.Services;
 
 namespace pjtSPEF.Controllers
 {
+    // Cursos/materias dentro de un periodo. El curso ya no guarda su periodo: cuelga de uno.
     public class CursosController : Controller
     {
-        private readonly SpefDbContext _db;
         private readonly GoogleCurrentUserService _currentUser;
+        private readonly SpefSheetStore _store;
         private readonly DriveStorageService _storage;
 
         public CursosController()
         {
-            _db = new SpefDbContext();
-            _currentUser = new GoogleCurrentUserService(_db);
+            _currentUser = new GoogleCurrentUserService();
+            _store = new SpefSheetStore(_currentUser);
             _storage = new DriveStorageService(_currentUser);
-        }
-
-        public ActionResult Index()
-        {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
-                return RedirectToAction("Login", "Account");
-
-            var cursos = _db.Cursos
-                .Where(c => c.UsuarioId == usuario.Id)
-                .OrderBy(c => c.Nombre)
-                .ToList();
-            return View(cursos);
         }
 
         public ActionResult Details(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var curso = _db.Cursos
-                .Include(c => c.Unidades)
-                .FirstOrDefault(c => c.Id == id && c.UsuarioId == usuario.Id);
+            var curso = _store.CursoConPeriodo(id);
             if (curso == null)
                 return HttpNotFound();
 
+            curso.Unidades = _store.UnidadesDeCurso(id);
             return View(curso);
         }
 
         [HttpGet]
-        public ActionResult Create()
+        public ActionResult Create(int periodoId)
         {
-            return View(new CursoFormViewModel());
+            if (_currentUser.ObtenerUsuarioActual() == null)
+                return RedirectToAction("Login", "Account");
+
+            var periodo = _store.Periodo(periodoId);
+            if (periodo == null)
+                return HttpNotFound();
+
+            ViewBag.Periodo = periodo;
+            return View(new CursoFormViewModel { PeriodoId = periodoId });
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
         public ActionResult Create(CursoFormViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            if (!ModelState.IsValid)
-                return View(model);
+            var periodo = _store.Periodo(model.PeriodoId);
+            if (periodo == null)
+                return HttpNotFound();
 
-            var curso = new Curso
+            if (!ModelState.IsValid)
             {
-                UsuarioId = usuario.Id,
+                ViewBag.Periodo = periodo;
+                return View(model);
+            }
+
+            var curso = _store.AgregarCurso(new Curso
+            {
+                PeriodoId = periodo.Id,
                 Nombre = model.Nombre.Trim(),
-                Periodo = string.IsNullOrWhiteSpace(model.Periodo) ? null : model.Periodo.Trim(),
                 FechaCreacion = DateTime.UtcNow
-            };
-            _db.Cursos.Add(curso);
-            _db.SaveChanges();
+            });
 
             return RedirectToAction("Details", new { id = curso.Id });
         }
@@ -84,38 +78,38 @@ namespace pjtSPEF.Controllers
         [HttpGet]
         public ActionResult Edit(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var curso = _db.Cursos.FirstOrDefault(c => c.Id == id && c.UsuarioId == usuario.Id);
+            var curso = _store.CursoConPeriodo(id);
             if (curso == null)
                 return HttpNotFound();
 
-            return View(new CursoFormViewModel { Id = curso.Id, Nombre = curso.Nombre, Periodo = curso.Periodo });
+            ViewBag.Periodo = curso.Periodo;
+            return View(new CursoFormViewModel { Id = curso.Id, PeriodoId = curso.PeriodoId, Nombre = curso.Nombre });
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
         public ActionResult Edit(int id, CursoFormViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var curso = _db.Cursos.FirstOrDefault(c => c.Id == id && c.UsuarioId == usuario.Id);
+            var curso = _store.CursoConPeriodo(id);
             if (curso == null)
                 return HttpNotFound();
 
             if (!ModelState.IsValid)
             {
                 model.Id = id;
+                model.PeriodoId = curso.PeriodoId;
+                ViewBag.Periodo = curso.Periodo;
                 return View(model);
             }
 
             curso.Nombre = model.Nombre.Trim();
-            curso.Periodo = string.IsNullOrWhiteSpace(model.Periodo) ? null : model.Periodo.Trim();
-            _db.SaveChanges();
+            _store.ActualizarCurso(curso);
 
             return RedirectToAction("Details", new { id = curso.Id });
         }
@@ -124,35 +118,21 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Delete(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var curso = _db.Cursos.FirstOrDefault(c => c.Id == id && c.UsuarioId == usuario.Id);
+            var curso = _store.Curso(id);
             if (curso == null)
                 return HttpNotFound();
 
-            // La BD elimina en cascada unidades → tipos → exámenes; los PDFs
-            // de esos exámenes hay que borrarlos aparte del almacenamiento.
-            var archivos = _db.ExamenesBase
-                .Where(e => e.TipoEvaluacion.Unidad.CursoId == id && e.ArchivoRef != null)
-                .Select(e => e.ArchivoRef)
-                .ToList();
+            var periodoId = curso.PeriodoId;
 
-            _db.Cursos.Remove(curso);
-            _db.SaveChanges();
-
+            // Cascada: unidades → tipos → exámenes → preguntas/entregas/respuestas. Los PDFs aparte.
+            var archivos = _store.EliminarCurso(id);
             foreach (var archivo in archivos)
                 _storage.Eliminar(archivo);
 
-            return RedirectToAction("Index");
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-                _db.Dispose();
-            base.Dispose(disposing);
+            return RedirectToAction("Details", "Periodos", new { id = periodoId });
         }
     }
 }

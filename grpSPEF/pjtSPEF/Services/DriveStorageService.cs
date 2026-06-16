@@ -72,6 +72,51 @@ namespace pjtSPEF.Services
             return upload.ResponseBody.Id;
         }
 
+        // Mueve un archivo ya subido a otra carpeta de la jerarquía (p. ej. entregas -> calificados).
+        // El fileRef (Id de Drive) no cambia, así que el llamador no necesita re-persistirlo.
+        public void Mover(string fileRef, string categoriaDestino)
+        {
+            if (string.IsNullOrEmpty(fileRef))
+                return;
+
+            int usuarioId;
+            var drive = CrearDrive(out usuarioId);
+            var destino = AsegurarRuta(drive, usuarioId, categoriaDestino);
+
+            var getArchivo = drive.Files.Get(fileRef);
+            getArchivo.Fields = "parents";
+            var parents = getArchivo.Execute().Parents;
+
+            // Ya está en la carpeta destino: nada que mover.
+            if (parents != null && parents.Contains(destino))
+                return;
+
+            var update = drive.Files.Update(new DriveFile(), fileRef);
+            update.AddParents = destino;
+            if (parents != null && parents.Count > 0)
+                update.RemoveParents = string.Join(",", parents);
+            update.Fields = "id";
+            update.Execute();
+        }
+
+        // Reemplaza el contenido (bytes) de un archivo ya subido, conservando su Id (fileRef).
+        // Se usa para guardar la versión sellada con la nota sobre el mismo archivo de la entrega.
+        public void ReemplazarContenido(string fileRef, Stream contenido)
+        {
+            if (string.IsNullOrEmpty(fileRef))
+                return;
+
+            var drive = CrearDrive();
+            if (contenido.CanSeek)
+                contenido.Position = 0;
+
+            var update = drive.Files.Update(new DriveFile(), fileRef, contenido, MimePdf);
+            update.Fields = "id";
+            var progreso = update.Upload();
+            if (progreso.Status != UploadStatus.Completed)
+                throw progreso.Exception ?? new Exception("No se pudo actualizar el archivo en Google Drive.");
+        }
+
         public Stream Abrir(string fileRef)
         {
             var drive = CrearDrive();

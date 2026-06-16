@@ -9,7 +9,8 @@
 
 @Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
 {
-    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis cursos", Url.Action("Index", "Cursos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis periodos", Url.Action("Index", "Periodos")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.TipoEvaluacion.Unidad.Curso.Periodo.Nombre, Url.Action("Details", "Periodos", new { id = Model.TipoEvaluacion.Unidad.Curso.PeriodoId })),
     new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.TipoEvaluacion.Unidad.Curso.Nombre, Url.Action("Details", "Cursos", new { id = Model.TipoEvaluacion.Unidad.CursoId })),
     new pjtSPEF.Models.ViewModels.BreadcrumbItem("Unidad " + Model.TipoEvaluacion.Unidad.Numero, Url.Action("Details", "Unidades", new { id = Model.TipoEvaluacion.UnidadId })),
     new pjtSPEF.Models.ViewModels.BreadcrumbItem(Model.TipoEvaluacion.Nombre, Url.Action("Details", "TiposEvaluacion", new { id = Model.TipoEvaluacionId })),

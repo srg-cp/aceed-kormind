@@ -1,0 +1,46 @@
+@model IEnumerable<pjtSPEF.Models.Entities.Periodo>
+@{
+    ViewBag.Title = "Mis periodos";
+}
+
+<div class="d-flex justify-content-between align-items-center mt-4 mb-3">
+    <h2>Mis periodos</h2>
+    <a href="@Url.Action("Create")" class="btn btn-primary">Nuevo periodo</a>
+</div>
+
+@if (!Model.Any())
+{
+    <div class="alert alert-info">
+        Aún no tienes periodos. Crea el primero (p. ej. 2026-I) para empezar a organizar tus cursos.
+    </div>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Periodo</th>
+                <th>Creado</th>
+                <th class="text-end">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var periodo in Model)
+            {
+                <tr>
+                    <td><a href="@Url.Action("Details", new { id = periodo.Id })">@periodo.Nombre</a></td>
+                    <td>@periodo.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy")</td>
+                    <td class="text-end">
+                        <a href="@Url.Action("Details", new { id = periodo.Id })" class="btn btn-sm btn-outline-primary">Abrir</a>
+                        <a href="@Url.Action("Edit", new { id = periodo.Id })" class="btn btn-sm btn-outline-secondary">Editar</a>
+                        @using (Html.BeginForm("Delete", "Periodos", new { id = periodo.Id }, FormMethod.Post, new { @class = "d-inline", onsubmit = "return confirm('¿Eliminar este periodo con todos sus cursos, unidades y exámenes?');" }))
+                        {
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

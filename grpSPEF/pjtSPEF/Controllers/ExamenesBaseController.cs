@@ -1,7 +1,5 @@
 using System;
-using System.Data.Entity;
 using System.IO;
-using System.Linq;
 using System.Web.Mvc;
 using pjtSPEF.Data;
 using pjtSPEF.Models.Entities;
@@ -12,41 +10,40 @@ namespace pjtSPEF.Controllers
 {
     public class ExamenesBaseController : Controller
     {
-        private readonly SpefDbContext _db;
         private readonly GoogleCurrentUserService _currentUser;
+        private readonly SpefSheetStore _store;
         private readonly DriveStorageService _storage;
         private readonly PdfPigValidationService _pdfValidator;
 
         public ExamenesBaseController()
         {
-            _db = new SpefDbContext();
-            _currentUser = new GoogleCurrentUserService(_db);
+            _currentUser = new GoogleCurrentUserService();
+            _store = new SpefSheetStore(_currentUser);
             _storage = new DriveStorageService(_currentUser);
             _pdfValidator = new PdfPigValidationService();
         }
 
         public ActionResult Details(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(id, usuario.Id);
-            if (examen == null)
+            var examen = _store.ExamenConCadena(id);
+            if (!EsValido(examen))
                 return HttpNotFound();
 
+            examen.PreguntasClave = _store.PreguntasDeExamen(id);
             return View(examen);
         }
 
         [HttpGet]
         public ActionResult Create(int tipoEvaluacionId)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var tipo = BuscarTipoDelUsuario(tipoEvaluacionId, usuario.Id);
-            if (tipo == null)
+            var tipo = _store.TipoConCadena(tipoEvaluacionId);
+            if (tipo == null || tipo.Unidad == null || tipo.Unidad.Curso == null)
                 return HttpNotFound();
 
             ViewBag.TipoEvaluacion = tipo;
@@ -57,12 +54,11 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Create(ExamenBaseFormViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var tipo = BuscarTipoDelUsuario(model.TipoEvaluacionId, usuario.Id);
-            if (tipo == null)
+            var tipo = _store.TipoConCadena(model.TipoEvaluacionId);
+            if (tipo == null || tipo.Unidad == null || tipo.Unidad.Curso == null)
                 return HttpNotFound();
 
             if (model.ArchivoPdf == null || model.ArchivoPdf.ContentLength == 0)
@@ -98,7 +94,7 @@ namespace pjtSPEF.Controllers
 
             try
             {
-                var examen = new ExamenBase
+                var examen = _store.AgregarExamen(new ExamenBase
                 {
                     TipoEvaluacionId = tipo.Id,
                     Titulo = model.Titulo.Trim(),
@@ -108,15 +104,13 @@ namespace pjtSPEF.Controllers
                     TotalPaginas = totalPaginas,
                     Estado = EstadoExamen.Borrador,
                     FechaCreacion = DateTime.UtcNow
-                };
-                _db.ExamenesBase.Add(examen);
-                _db.SaveChanges();
+                });
 
                 return RedirectToAction("Details", new { id = examen.Id });
             }
             catch
             {
-                // Compensación: si no se pudo registrar en BD, no dejar el archivo huérfano.
+                // Compensación: si no se pudo registrar, no dejar el archivo huérfano en Drive.
                 _storage.Eliminar(archivoRef);
                 throw;
             }
@@ -125,12 +119,11 @@ namespace pjtSPEF.Controllers
         [HttpGet]
         public ActionResult Edit(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(id, usuario.Id);
-            if (examen == null)
+            var examen = _store.ExamenConCadena(id);
+            if (!EsValido(examen))
                 return HttpNotFound();
 
             ViewBag.Examen = examen;
@@ -147,12 +140,11 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Edit(int id, ExamenBaseFormViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(id, usuario.Id);
-            if (examen == null)
+            var examen = _store.ExamenConCadena(id);
+            if (!EsValido(examen))
                 return HttpNotFound();
 
             // El PDF es opcional al editar: si llega, reemplaza al anterior.
@@ -175,8 +167,8 @@ namespace pjtSPEF.Controllers
                 return View(model);
             }
 
-            // Si cambió el título, renombra la carpeta del examen en Drive para que el directorio
-            // refleje el nuevo nombre (arrastra el PDF base y la subcarpeta de entregas).
+            // Si cambió el título, renombra la carpeta del examen en Drive (arrastra el PDF base
+            // y la subcarpeta de entregas).
             var tituloNuevo = model.Titulo.Trim();
             if (!string.Equals(examen.Titulo, tituloNuevo, StringComparison.Ordinal) && !string.IsNullOrEmpty(examen.ArchivoRef))
             {
@@ -192,7 +184,7 @@ namespace pjtSPEF.Controllers
                 string nuevoRef;
                 try
                 {
-                    nuevoRef = _storage.Guardar(model.ArchivoPdf.InputStream, RutaStorage.ExamenBase(examen.TipoEvaluacion, model.Titulo), ".pdf");
+                    nuevoRef = _storage.Guardar(model.ArchivoPdf.InputStream, RutaStorage.ExamenBase(examen.TipoEvaluacion, tituloNuevo), ".pdf");
                 }
                 catch (DriveNoAutorizadoException ex)
                 {
@@ -212,7 +204,7 @@ namespace pjtSPEF.Controllers
             examen.Titulo = tituloNuevo;
             examen.NotaMaxima = model.NotaMaxima.Value;
             examen.FechaModificacion = DateTime.UtcNow;
-            _db.SaveChanges();
+            _store.ActualizarExamen(examen);
 
             if (archivoAnterior != null)
                 _storage.Eliminar(archivoAnterior);
@@ -224,31 +216,27 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Delete(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(id, usuario.Id);
+            var examen = _store.Examen(id);
             if (examen == null)
                 return HttpNotFound();
 
             var tipoEvaluacionId = examen.TipoEvaluacionId;
-            var archivo = examen.ArchivoRef;
-
-            _db.ExamenesBase.Remove(examen);
-            _db.SaveChanges();
-            _storage.Eliminar(archivo);
+            var archivos = _store.EliminarExamen(id);
+            foreach (var archivo in archivos)
+                _storage.Eliminar(archivo);
 
             return RedirectToAction("Details", "TiposEvaluacion", new { id = tipoEvaluacionId });
         }
 
         public ActionResult Descargar(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var examen = BuscarExamenDelUsuario(id, usuario.Id);
+            var examen = _store.Examen(id);
             if (examen == null || string.IsNullOrEmpty(examen.ArchivoRef))
                 return HttpNotFound();
 
@@ -258,25 +246,10 @@ namespace pjtSPEF.Controllers
             return File(_storage.Abrir(examen.ArchivoRef), "application/pdf", nombreDescarga);
         }
 
-        private ExamenBase BuscarExamenDelUsuario(int id, int usuarioId)
+        private static bool EsValido(ExamenBase examen)
         {
-            return _db.ExamenesBase
-                .Include(e => e.TipoEvaluacion.Unidad.Curso)
-                .FirstOrDefault(e => e.Id == id && e.TipoEvaluacion.Unidad.Curso.UsuarioId == usuarioId);
-        }
-
-        private TipoEvaluacion BuscarTipoDelUsuario(int id, int usuarioId)
-        {
-            return _db.TiposEvaluacion
-                .Include(t => t.Unidad.Curso)
-                .FirstOrDefault(t => t.Id == id && t.Unidad.Curso.UsuarioId == usuarioId);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-                _db.Dispose();
-            base.Dispose(disposing);
+            return examen != null && examen.TipoEvaluacion != null
+                && examen.TipoEvaluacion.Unidad != null && examen.TipoEvaluacion.Unidad.Curso != null;
         }
     }
 }

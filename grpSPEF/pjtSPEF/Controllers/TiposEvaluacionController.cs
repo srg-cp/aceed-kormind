@@ -1,6 +1,4 @@
 using System;
-using System.Data.Entity;
-using System.Linq;
 using System.Web.Mvc;
 using pjtSPEF.Data;
 using pjtSPEF.Models.Entities;
@@ -11,44 +9,38 @@ namespace pjtSPEF.Controllers
 {
     public class TiposEvaluacionController : Controller
     {
-        private readonly SpefDbContext _db;
         private readonly GoogleCurrentUserService _currentUser;
+        private readonly SpefSheetStore _store;
         private readonly DriveStorageService _storage;
 
         public TiposEvaluacionController()
         {
-            _db = new SpefDbContext();
-            _currentUser = new GoogleCurrentUserService(_db);
+            _currentUser = new GoogleCurrentUserService();
+            _store = new SpefSheetStore(_currentUser);
             _storage = new DriveStorageService(_currentUser);
         }
 
         public ActionResult Details(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var tipo = _db.TiposEvaluacion
-                .Include(t => t.Unidad.Curso)
-                .Include(t => t.ExamenesBase)
-                .FirstOrDefault(t => t.Id == id && t.Unidad.Curso.UsuarioId == usuario.Id);
-            if (tipo == null)
+            var tipo = _store.TipoConCadena(id);
+            if (tipo == null || tipo.Unidad == null || tipo.Unidad.Curso == null)
                 return HttpNotFound();
 
+            tipo.ExamenesBase = _store.ExamenesDeTipo(id);
             return View(tipo);
         }
 
         [HttpGet]
         public ActionResult Create(int unidadId)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var unidad = _db.Unidades
-                .Include(u => u.Curso)
-                .FirstOrDefault(u => u.Id == unidadId && u.Curso.UsuarioId == usuario.Id);
-            if (unidad == null)
+            var unidad = _store.UnidadConCadena(unidadId);
+            if (unidad == null || unidad.Curso == null)
                 return HttpNotFound();
 
             ViewBag.Unidad = unidad;
@@ -59,14 +51,11 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Create(TipoEvaluacionFormViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var unidad = _db.Unidades
-                .Include(u => u.Curso)
-                .FirstOrDefault(u => u.Id == model.UnidadId && u.Curso.UsuarioId == usuario.Id);
-            if (unidad == null)
+            var unidad = _store.UnidadConCadena(model.UnidadId);
+            if (unidad == null || unidad.Curso == null)
                 return HttpNotFound();
 
             if (!ModelState.IsValid)
@@ -75,14 +64,12 @@ namespace pjtSPEF.Controllers
                 return View(model);
             }
 
-            var tipo = new TipoEvaluacion
+            _store.AgregarTipo(new TipoEvaluacion
             {
                 UnidadId = unidad.Id,
                 Nombre = model.Nombre.Trim(),
                 FechaCreacion = DateTime.UtcNow
-            };
-            _db.TiposEvaluacion.Add(tipo);
-            _db.SaveChanges();
+            });
 
             return RedirectToAction("Details", "Unidades", new { id = unidad.Id });
         }
@@ -90,14 +77,11 @@ namespace pjtSPEF.Controllers
         [HttpGet]
         public ActionResult Edit(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var tipo = _db.TiposEvaluacion
-                .Include(t => t.Unidad.Curso)
-                .FirstOrDefault(t => t.Id == id && t.Unidad.Curso.UsuarioId == usuario.Id);
-            if (tipo == null)
+            var tipo = _store.TipoConCadena(id);
+            if (tipo == null || tipo.Unidad == null || tipo.Unidad.Curso == null)
                 return HttpNotFound();
 
             ViewBag.Unidad = tipo.Unidad;
@@ -108,14 +92,11 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Edit(int id, TipoEvaluacionFormViewModel model)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var tipo = _db.TiposEvaluacion
-                .Include(t => t.Unidad.Curso)
-                .FirstOrDefault(t => t.Id == id && t.Unidad.Curso.UsuarioId == usuario.Id);
-            if (tipo == null)
+            var tipo = _store.TipoConCadena(id);
+            if (tipo == null || tipo.Unidad == null || tipo.Unidad.Curso == null)
                 return HttpNotFound();
 
             if (!ModelState.IsValid)
@@ -127,7 +108,7 @@ namespace pjtSPEF.Controllers
             }
 
             tipo.Nombre = model.Nombre.Trim();
-            _db.SaveChanges();
+            _store.ActualizarTipo(tipo);
 
             return RedirectToAction("Details", "Unidades", new { id = tipo.UnidadId });
         }
@@ -136,36 +117,19 @@ namespace pjtSPEF.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Delete(int id)
         {
-            var usuario = _currentUser.ObtenerUsuarioActual();
-            if (usuario == null)
+            if (_currentUser.ObtenerUsuarioActual() == null)
                 return RedirectToAction("Login", "Account");
 
-            var tipo = _db.TiposEvaluacion
-                .Include(t => t.Unidad.Curso)
-                .FirstOrDefault(t => t.Id == id && t.Unidad.Curso.UsuarioId == usuario.Id);
+            var tipo = _store.Tipo(id);
             if (tipo == null)
                 return HttpNotFound();
 
             var unidadId = tipo.UnidadId;
-            var archivos = _db.ExamenesBase
-                .Where(e => e.TipoEvaluacionId == id && e.ArchivoRef != null)
-                .Select(e => e.ArchivoRef)
-                .ToList();
-
-            _db.TiposEvaluacion.Remove(tipo);
-            _db.SaveChanges();
-
+            var archivos = _store.EliminarTipo(id);
             foreach (var archivo in archivos)
                 _storage.Eliminar(archivo);
 
             return RedirectToAction("Details", "Unidades", new { id = unidadId });
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-                _db.Dispose();
-            base.Dispose(disposing);
         }
     }
 }

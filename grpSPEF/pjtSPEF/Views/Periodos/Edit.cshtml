@@ -1,0 +1,47 @@
+@model pjtSPEF.Models.ViewModels.PeriodoFormViewModel
+@{
+    ViewBag.Title = "Editar periodo";
+}
+
+@Html.Partial("_Breadcrumb", new List<pjtSPEF.Models.ViewModels.BreadcrumbItem>
+{
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Mis periodos", Url.Action("Index")),
+    new pjtSPEF.Models.ViewModels.BreadcrumbItem("Editar")
+})
+
+<h2>Editar periodo</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        @using (Html.BeginForm())
+        {
+            @Html.AntiForgeryToken()
+            @Html.ValidationSummary(true, "", new { @class = "text-danger" })
+
+            <div class="mb-3">
+                @Html.LabelFor(m => m.Anio, new { @class = "form-label" })
+                @Html.TextBoxFor(m => m.Anio, new { @class = "form-control", type = "number", min = "2000", max = "2100" })
+                @Html.ValidationMessageFor(m => m.Anio, "", new { @class = "text-danger" })
+            </div>
+            <div class="mb-3">
+                @Html.LabelFor(m => m.Tipo, new { @class = "form-label" })
+                @Html.DropDownListFor(m => m.Tipo,
+                    new List<SelectListItem>
+                    {
+                        new SelectListItem { Text = "I", Value = "I" },
+                        new SelectListItem { Text = "II", Value = "II" },
+                        new SelectListItem { Text = "REC", Value = "REC" }
+                    },
+                    new { @class = "form-select" })
+                @Html.ValidationMessageFor(m => m.Tipo, "", new { @class = "text-danger" })
+            </div>
+
+            <button type="submit" class="btn btn-primary">Guardar cambios</button>
+            <a href="@Url.Action("Details", new { id = Model.Id })" class="btn btn-outline-secondary">Cancelar</a>
+        }
+    </div>
+</div>
+
+@section scripts {
+    @Scripts.Render("~/bundles/jqueryval")
+}

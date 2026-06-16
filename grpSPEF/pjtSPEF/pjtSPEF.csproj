@@ -1,6 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="..\packages\EntityFramework.6.5.2\build\EntityFramework.props" Condition="Exists('..\packages\EntityFramework.6.5.2\build\EntityFramework.props')" />
   <Import Project="..\packages\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.2.0.1\build\net46\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.props" Condition="Exists('..\packages\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.2.0.1\build\net46\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.props')" />
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -46,12 +45,6 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="EntityFramework, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
-      <HintPath>..\packages\EntityFramework.6.5.2\lib\net45\EntityFramework.dll</HintPath>
-    </Reference>
-    <Reference Include="EntityFramework.SqlServer, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
-      <HintPath>..\packages\EntityFramework.6.5.2\lib\net45\EntityFramework.SqlServer.dll</HintPath>
-    </Reference>
     <Reference Include="Google.Apis, Version=1.74.0.0, Culture=neutral, PublicKeyToken=4b01fa6e34db77ab, processorArchitecture=MSIL">
       <HintPath>..\packages\Google.Apis.1.74.0\lib\net462\Google.Apis.dll</HintPath>
     </Reference>
@@ -63,6 +56,9 @@
     </Reference>
     <Reference Include="Google.Apis.Drive.v3, Version=1.74.0.4135, Culture=neutral, PublicKeyToken=4b01fa6e34db77ab, processorArchitecture=MSIL">
       <HintPath>..\packages\Google.Apis.Drive.v3.1.74.0.4135\lib\net462\Google.Apis.Drive.v3.dll</HintPath>
+    </Reference>
+    <Reference Include="Google.Apis.Sheets.v4, Version=1.74.0.4061, Culture=neutral, PublicKeyToken=4b01fa6e34db77ab, processorArchitecture=MSIL">
+      <HintPath>..\packages\Google.Apis.Sheets.v4.1.74.0.4061\lib\net462\Google.Apis.Sheets.v4.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.Bcl.HashCode, Version=6.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.Bcl.HashCode.6.0.0\lib\net462\Microsoft.Bcl.HashCode.dll</HintPath>
@@ -202,17 +198,11 @@
     <Compile Include="Controllers\EvaluacionesController.cs" />
     <Compile Include="Controllers\ExamenesBaseController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
+    <Compile Include="Controllers\PeriodosController.cs" />
     <Compile Include="Controllers\TiposEvaluacionController.cs" />
     <Compile Include="Controllers\UnidadesController.cs" />
-    <Compile Include="Data\Mappings\CursoMap.cs" />
-    <Compile Include="Data\Mappings\EvaluacionEstudianteMap.cs" />
-    <Compile Include="Data\Mappings\ExamenBaseMap.cs" />
-    <Compile Include="Data\Mappings\PreguntaClaveMap.cs" />
-    <Compile Include="Data\Mappings\RespuestaEstudianteMap.cs" />
-    <Compile Include="Data\Mappings\TipoEvaluacionMap.cs" />
-    <Compile Include="Data\Mappings\UnidadMap.cs" />
-    <Compile Include="Data\Mappings\UsuarioMap.cs" />
-    <Compile Include="Data\SpefDbContext.cs" />
+    <Compile Include="Data\LocalUserStore.cs" />
+    <Compile Include="Data\SpefSheetStore.cs" />
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
@@ -221,15 +211,19 @@
     <Compile Include="Models\Entities\EstadoExamen.cs" />
     <Compile Include="Models\Entities\EvaluacionEstudiante.cs" />
     <Compile Include="Models\Entities\ExamenBase.cs" />
+    <Compile Include="Models\Entities\Periodo.cs" />
     <Compile Include="Models\Entities\PreguntaClave.cs" />
     <Compile Include="Models\Entities\RespuestaEstudiante.cs" />
     <Compile Include="Models\Entities\TipoEvaluacion.cs" />
+    <Compile Include="Models\Entities\TipoPeriodo.cs" />
     <Compile Include="Models\Entities\Unidad.cs" />
     <Compile Include="Models\Entities\Usuario.cs" />
     <Compile Include="Models\ViewModels\BreadcrumbItem.cs" />
     <Compile Include="Models\ViewModels\CalibracionViewModel.cs" />
     <Compile Include="Models\ViewModels\CursoFormViewModel.cs" />
     <Compile Include="Models\ViewModels\ExamenBaseFormViewModel.cs" />
+    <Compile Include="Models\ViewModels\GuardarCalificacionViewModel.cs" />
+    <Compile Include="Models\ViewModels\PeriodoFormViewModel.cs" />
     <Compile Include="Models\ViewModels\SubirEvaluacionesViewModel.cs" />
     <Compile Include="Models\ViewModels\TipoEvaluacionFormViewModel.cs" />
     <Compile Include="Models\ViewModels\UnidadFormViewModel.cs" />
@@ -240,8 +234,10 @@
     <Compile Include="Services\GeminiCalificadorService.cs" />
     <Compile Include="Services\GeminiExtractorClaveService.cs" />
     <Compile Include="Services\GoogleCurrentUserService.cs" />
+    <Compile Include="Services\GoogleSheetsClient.cs" />
     <Compile Include="Services\ICalificadorService.cs" />
     <Compile Include="Services\PdfPigValidationService.cs" />
+    <Compile Include="Services\PdfSelloService.cs" />
     <Compile Include="Services\ProveedorIa.cs" />
     <Compile Include="Services\RutaStorage.cs" />
     <Compile Include="Services\TokenProtector.cs" />
@@ -302,7 +298,10 @@
     <Content Include="Views\Shared\_Breadcrumb.cshtml" />
     <Content Include="Views\Home\Index.cshtml" />
     <Content Include="Views\Account\Login.cshtml" />
-    <Content Include="Views\Cursos\Index.cshtml" />
+    <Content Include="Views\Periodos\Index.cshtml" />
+    <Content Include="Views\Periodos\Create.cshtml" />
+    <Content Include="Views\Periodos\Edit.cshtml" />
+    <Content Include="Views\Periodos\Details.cshtml" />
     <Content Include="Views\Cursos\Create.cshtml" />
     <Content Include="Views\Cursos\Edit.cshtml" />
     <Content Include="Views\Cursos\Details.cshtml" />
@@ -383,10 +382,7 @@
       <ErrorText>Este proyecto hace referencia a los paquetes NuGet que faltan en este equipo. Use la restauración de paquetes NuGet para descargarlos. Para obtener más información, consulte http://go.microsoft.com/fwlink/?LinkID=322105. El archivo que falta es {0}.</ErrorText>
     </PropertyGroup>
     <Error Condition="!Exists('..\packages\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.2.0.1\build\net46\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.2.0.1\build\net46\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.props'))" />
-    <Error Condition="!Exists('..\packages\EntityFramework.6.5.2\build\EntityFramework.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\EntityFramework.6.5.2\build\EntityFramework.props'))" />
-    <Error Condition="!Exists('..\packages\EntityFramework.6.5.2\build\EntityFramework.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\EntityFramework.6.5.2\build\EntityFramework.targets'))" />
   </Target>
-  <Import Project="..\packages\EntityFramework.6.5.2\build\EntityFramework.targets" Condition="Exists('..\packages\EntityFramework.6.5.2\build\EntityFramework.targets')" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">
