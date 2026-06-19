@@ -202,6 +202,58 @@ namespace pjtSPEF.Controllers
             return RedirectToAction("Details", new { id });
         }
 
+        // (Re)califica UNA entrega y devuelve JSON. Lo usa el bucle de calificación en lote
+        // de la vista Index (un request por entrega, con barra de progreso en el navegador),
+        // para no meter decenas de llamadas a la IA en un solo request y evitar timeouts.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<ActionResult> CalificarUna(int id, string proveedor)
+        {
+            if (_currentUser.ObtenerUsuarioActual() == null)
+                return Json(new { ok = false, error = "Sesión expirada. Vuelve a iniciar sesión." });
+
+            var evaluacion = CargarEvaluacion(id);
+            if (evaluacion == null)
+                return Json(new { ok = false, error = "Entrega no encontrada." });
+
+            var examen = evaluacion.ExamenBase;
+            if (examen.PreguntasClave == null || !examen.PreguntasClave.Any())
+                return Json(new { ok = false, error = "El examen base no tiene clave calibrada." });
+
+            var ia = ProveedorIaExtensions.Parsear(proveedor);
+            bool calificada;
+            try
+            {
+                calificada = await CalificarEvaluacion(evaluacion, examen, ia);
+            }
+            catch (Exception ex)
+            {
+                return Json(new { ok = false, id, error = ex.Message });
+            }
+
+            // Igual que en Calificar: la entrega queda (o vuelve) en entregas/ pendiente de
+            // revisión; recién al pulsar Guardar se archiva en calificados/.
+            MoverEntrega(evaluacion, RutaStorage.Entregas(examen));
+
+            if (calificada && examen.Estado == EstadoExamen.Calibrado)
+            {
+                examen.Estado = EstadoExamen.Activo;
+                examen.FechaModificacion = DateTime.UtcNow;
+                _store.ActualizarExamen(examen);
+            }
+
+            return Json(new
+            {
+                ok = calificada,
+                id,
+                estado = evaluacion.Estado.ToString(),
+                nota = evaluacion.NotaTotal,
+                notaMaxima = examen.NotaMaxima,
+                nombre = evaluacion.NombreEstudiante,
+                error = calificada ? null : (evaluacion.MensajeError ?? "No se pudo calificar la entrega.")
+            });
+        }
+
         // Corrige el nombre del estudiante (el que detectó la IA puede venir mal leído).
         [HttpPost]
         [ValidateAntiForgeryToken]
@@ -274,9 +326,11 @@ namespace pjtSPEF.Controllers
                 actual.PuntajeObtenido = edit.PuntajeObtenido;
             }
 
-            // 3) Persistir el detalle y recalcular la nota total.
+            // 3) Persistir el detalle y recalcular la nota total. Al guardar, el docente
+            // confirma la calificación: la entrega pasa a Revisada.
             _store.ReemplazarRespuestas(model.EvaluacionId, respuestas);
             evaluacion.NotaTotal = respuestas.Sum(r => r.PuntajeObtenido);
+            evaluacion.Estado = EstadoEvaluacion.Revisada;
             _store.ActualizarEvaluacion(evaluacion);
 
             // 4) Sellar la nota + los ✔/✗ sobre el PDF y archivarlo: entregas/ -> calificados/.
@@ -285,6 +339,61 @@ namespace pjtSPEF.Controllers
 
             TempData["Exito"] = "Calificación guardada y archivada en Drive.";
             return RedirectToAction("Details", new { id = model.EvaluacionId });
+        }
+
+        // Abre en Drive la carpeta del examen (contiene el PDF base + entregas/ + calificados/).
+        // Botón "Abrir en Drive" de la lista de entregas.
+        public ActionResult AbrirCarpetaDrive(int examenBaseId)
+        {
+            if (_currentUser.ObtenerUsuarioActual() == null)
+                return RedirectToAction("Login", "Account");
+
+            var examen = CargarExamen(examenBaseId);
+            if (examen == null)
+                return HttpNotFound();
+
+            try
+            {
+                var url = _storage.EnlaceCarpeta(RutaStorage.ExamenBase(examen.TipoEvaluacion, examen.Titulo));
+                if (string.IsNullOrEmpty(url))
+                {
+                    TempData["Error"] = "No se pudo abrir la carpeta en Drive.";
+                    return RedirectToAction("Index", new { examenBaseId });
+                }
+                return Redirect(url);
+            }
+            catch (DriveNoAutorizadoException ex)
+            {
+                TempData["Error"] = ex.Message;
+                return RedirectToAction("Index", new { examenBaseId });
+            }
+        }
+
+        // Abre en Drive el PDF de una entrega concreta. Botón "Abrir en Drive" del detalle.
+        public ActionResult AbrirEnDrive(int id)
+        {
+            if (_currentUser.ObtenerUsuarioActual() == null)
+                return RedirectToAction("Login", "Account");
+
+            var evaluacion = _store.Evaluacion(id);
+            if (evaluacion == null || string.IsNullOrEmpty(evaluacion.ArchivoRef))
+                return HttpNotFound();
+
+            try
+            {
+                var url = _storage.EnlaceArchivo(evaluacion.ArchivoRef);
+                if (string.IsNullOrEmpty(url))
+                {
+                    TempData["Error"] = "No se pudo abrir el PDF en Drive.";
+                    return RedirectToAction("Details", new { id });
+                }
+                return Redirect(url);
+            }
+            catch (DriveNoAutorizadoException ex)
+            {
+                TempData["Error"] = ex.Message;
+                return RedirectToAction("Details", new { id });
+            }
         }
 
         public ActionResult Descargar(int id)

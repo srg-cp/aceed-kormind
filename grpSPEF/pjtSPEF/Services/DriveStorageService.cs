@@ -25,6 +25,10 @@ namespace pjtSPEF.Services
         private const string MimeCarpeta = "application/vnd.google-apps.folder";
         private const string MimePdf = "application/pdf";
 
+        // Prefijos de las URLs web de Drive para abrir carpetas/archivos en el navegador.
+        private const string UrlCarpeta = "https://drive.google.com/drive/folders/";
+        private const string UrlArchivo = "https://drive.google.com/file/d/";
+
         // El DriveService (y su token) se reutiliza por usuario para no rehacer el refresh
         // del access token en cada subida. La clave incluye el refresh token: si el usuario
         // se reautentica con uno nuevo, se crea un cliente nuevo y el viejo queda descartado.
@@ -115,6 +119,27 @@ namespace pjtSPEF.Services
             var progreso = update.Upload();
             if (progreso.Status != UploadStatus.Completed)
                 throw progreso.Exception ?? new Exception("No se pudo actualizar el archivo en Google Drive.");
+        }
+
+        // URL web para abrir en el navegador la carpeta de una categoría (p. ej. la del examen,
+        // que contiene el PDF base y las subcarpetas entregas/ y calificados/). La resuelve
+        // creándola si hiciera falta, igual que al subir.
+        public string EnlaceCarpeta(string categoria)
+        {
+            int usuarioId;
+            var drive = CrearDrive(out usuarioId);
+            var carpetaId = AsegurarRuta(drive, usuarioId, categoria);
+            return UrlCarpeta + carpetaId;
+        }
+
+        // URL web para abrir en el navegador un archivo ya subido (su fileRef es el Id de Drive).
+        // Valida que haya sesión/credenciales de Drive antes de entregar el enlace.
+        public string EnlaceArchivo(string fileRef)
+        {
+            if (string.IsNullOrEmpty(fileRef))
+                return null;
+            CrearDrive();
+            return UrlArchivo + fileRef + "/view";
         }
 
         public Stream Abrir(string fileRef)

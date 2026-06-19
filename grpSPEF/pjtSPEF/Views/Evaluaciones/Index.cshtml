@@ -20,7 +20,10 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2 class="mb-0">Entregas — @Model.Titulo</h2>
-    <a href="@Url.Action("Subir", new { examenBaseId = Model.Id })" class="btn btn-primary">Subir entregas</a>
+    <div class="d-flex gap-2">
+        <a href="@Url.Action("AbrirCarpetaDrive", new { examenBaseId = Model.Id })" target="_blank" rel="noopener" class="btn btn-outline-secondary">Abrir en Drive</a>
+        <a href="@Url.Action("Subir", new { examenBaseId = Model.Id })" class="btn btn-primary">Subir entregas</a>
+    </div>
 </div>
 
 @if (TempData["Exito"] != null)
@@ -48,6 +51,46 @@
 }
 else
 {
+    var sinCalificar = evaluaciones.Count(e =>
+        e.Estado == pjtSPEF.Models.Entities.EstadoEvaluacion.Pendiente
+        || e.Estado == pjtSPEF.Models.Entities.EstadoEvaluacion.Error);
+
+    if (hayClave)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <label for="lote-proveedor" class="form-label mb-0">Calificar con IA:</label>
+                        <select id="lote-proveedor" class="form-select form-select-sm" style="width: auto">
+                            <option value="gemini">Flash (rápido)</option>
+                            <option value="claude">Pro (preciso)</option>
+                        </select>
+                    </div>
+                    <button type="button" id="btn-lote-pendientes" class="btn btn-primary btn-sm"
+                            data-modo="pendientes" @(sinCalificar == 0 ? "disabled" : "")>
+                        Calificar pendientes (<span id="cuenta-pendientes">@sinCalificar</span>)
+                    </button>
+                    <button type="button" id="btn-lote-todo" class="btn btn-outline-dark btn-sm"
+                            data-modo="todo">
+                        Calificar / re-calificar todo (@evaluaciones.Count)
+                    </button>
+                    @Html.AntiForgeryToken()
+                </div>
+                <div id="lote-progreso" class="mt-3 d-none">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span id="lote-texto">Preparando…</span>
+                        <button type="button" id="btn-lote-cancelar" class="btn btn-link btn-sm p-0">Cancelar</button>
+                    </div>
+                    <div class="progress" style="height: 1.25rem">
+                        <div id="lote-barra" class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+                    </div>
+                    <div id="lote-resumen" class="small text-muted mt-1"></div>
+                </div>
+            </div>
+        </div>
+    }
+
     <table class="table table-hover align-middle">
         <thead>
             <tr>
@@ -62,24 +105,27 @@ else
         <tbody>
             @foreach (var ev in evaluaciones)
             {
-                <tr>
-                    <td><a href="@Url.Action("Details", new { id = ev.Id })">@(string.IsNullOrWhiteSpace(ev.NombreEstudiante) ? "(sin nombre)" : ev.NombreEstudiante)</a></td>
+                <tr id="fila-@ev.Id" data-id="@ev.Id" data-estado="@((int)ev.Estado)">
+                    <td id="nombre-@ev.Id"><a href="@Url.Action("Details", new { id = ev.Id })">@(string.IsNullOrWhiteSpace(ev.NombreEstudiante) ? "(sin nombre)" : ev.NombreEstudiante)</a></td>
                     <td class="text-muted small">@(ev.ArchivoNombreOriginal ?? "—")</td>
-                    <td>
+                    <td id="estado-@ev.Id">
                         @switch (ev.Estado)
                         {
                             case pjtSPEF.Models.Entities.EstadoEvaluacion.Pendiente:
                                 <span class="badge bg-secondary">Pendiente</span>
                                 break;
                             case pjtSPEF.Models.Entities.EstadoEvaluacion.Calificada:
-                                <span class="badge bg-success">Calificada</span>
+                                <span class="badge bg-warning text-dark">Calificada por IA</span>
+                                break;
+                            case pjtSPEF.Models.Entities.EstadoEvaluacion.Revisada:
+                                <span class="badge bg-success">Revisada</span>
                                 break;
                             case pjtSPEF.Models.Entities.EstadoEvaluacion.Error:
                                 <span class="badge bg-danger">Error</span>
                                 break;
                         }
                     </td>
-                    <td>
+                    <td id="nota-@ev.Id">
                         @if (ev.NotaTotal.HasValue)
                         {
                             <strong>@ev.NotaTotal.Value.ToString("0.##")</strong><span class="text-muted"> / @Model.NotaMaxima.ToString("0.##")</span>
@@ -102,4 +148,159 @@ else
             }
         </tbody>
     </table>
+}
+
+@section scripts {
+    <script>
+        (function () {
+            var btnPendientes = document.getElementById('btn-lote-pendientes');
+            var btnTodo = document.getElementById('btn-lote-todo');
+            if (!btnPendientes || !btnTodo) return; // sin clave: no hay panel de lote
+
+            var urlCalificar = '@Url.Action("CalificarUna")';
+            var selProveedor = document.getElementById('lote-proveedor');
+            var panel = document.getElementById('lote-progreso');
+            var barra = document.getElementById('lote-barra');
+            var texto = document.getElementById('lote-texto');
+            var resumen = document.getElementById('lote-resumen');
+            var cuentaPendientes = document.getElementById('cuenta-pendientes');
+            var btnCancelar = document.getElementById('btn-lote-cancelar');
+
+            // Pendiente = 0, Calificada = 1, Error = 2, Revisada = 3.
+            var ESTADO_NUM = { Pendiente: 0, Calificada: 1, Error: 2, Revisada: 3 };
+            var cancelado = false;
+            var corriendo = false;
+
+            function token() {
+                var el = document.querySelector('input[name="__RequestVerificationToken"]');
+                return el ? el.value : '';
+            }
+
+            function fmt(n) {
+                if (n === null || typeof n === 'undefined') return null;
+                return parseFloat(parseFloat(n).toFixed(2)).toString();
+            }
+
+            function badgeHtml(estado) {
+                switch (estado) {
+                    case 'Pendiente': return '<span class="badge bg-secondary">Pendiente</span>';
+                    case 'Calificada': return '<span class="badge bg-warning text-dark">Calificada por IA</span>';
+                    case 'Revisada': return '<span class="badge bg-success">Revisada</span>';
+                    case 'Error': return '<span class="badge bg-danger">Error</span>';
+                    default: return '';
+                }
+            }
+
+            function actualizarFila(data) {
+                var fila = document.getElementById('fila-' + data.id);
+                if (!fila) return;
+                var celdaEstado = document.getElementById('estado-' + data.id);
+                var celdaNota = document.getElementById('nota-' + data.id);
+                var celdaNombre = document.getElementById('nombre-' + data.id);
+
+                if (data.estado) {
+                    celdaEstado.innerHTML = badgeHtml(data.estado);
+                    fila.setAttribute('data-estado', ESTADO_NUM[data.estado]);
+                }
+                if (data.ok && fmt(data.nota) !== null) {
+                    celdaNota.innerHTML = '<strong>' + fmt(data.nota) + '</strong>'
+                        + '<span class="text-muted"> / ' + fmt(data.notaMaxima) + '</span>';
+                }
+                if (data.ok && data.nombre && celdaNombre) {
+                    var enlace = celdaNombre.querySelector('a');
+                    if (enlace) enlace.textContent = data.nombre;
+                }
+            }
+
+            function objetivos(modo) {
+                var filas = Array.prototype.slice.call(document.querySelectorAll('tr[data-id]'));
+                return filas.filter(function (f) {
+                    if (modo === 'todo') return true;
+                    var e = parseInt(f.getAttribute('data-estado'), 10);
+                    return e === ESTADO_NUM.Pendiente || e === ESTADO_NUM.Error; // sin nota de IA
+                }).map(function (f) { return parseInt(f.getAttribute('data-id'), 10); });
+            }
+
+            function setControles(habilitar) {
+                selProveedor.disabled = !habilitar;
+                btnPendientes.disabled = !habilitar || parseInt(cuentaPendientes.textContent, 10) === 0;
+                btnTodo.disabled = !habilitar;
+            }
+
+            function recalcularPendientes() {
+                var filas = Array.prototype.slice.call(document.querySelectorAll('tr[data-id]'));
+                var n = filas.filter(function (f) {
+                    var e = parseInt(f.getAttribute('data-estado'), 10);
+                    return e === ESTADO_NUM.Pendiente || e === ESTADO_NUM.Error;
+                }).length;
+                cuentaPendientes.textContent = n;
+            }
+
+            async function correrLote(modo) {
+                if (corriendo) return;
+                var ids = objetivos(modo);
+                if (ids.length === 0) {
+                    alert('No hay entregas que calificar con esa opción.');
+                    return;
+                }
+                if (modo === 'todo' &&
+                    !confirm('Esto re-calificará TODAS las entregas con la IA, incluidas las ya revisadas. '
+                        + 'Se perderán los ajustes manuales que no hayas vuelto a revisar. ¿Continuar?')) {
+                    return;
+                }
+
+                corriendo = true;
+                cancelado = false;
+                setControles(false);
+                panel.classList.remove('d-none');
+                resumen.textContent = '';
+                var proveedor = selProveedor.value;
+                var ok = 0, fallos = 0;
+
+                for (var i = 0; i < ids.length; i++) {
+                    if (cancelado) break;
+                    var id = ids[i];
+                    texto.textContent = 'Calificando ' + (i + 1) + ' de ' + ids.length + '…';
+                    var pct = Math.round((i / ids.length) * 100);
+                    barra.style.width = pct + '%';
+                    barra.textContent = pct + '%';
+
+                    try {
+                        var body = new URLSearchParams();
+                        body.append('__RequestVerificationToken', token());
+                        body.append('id', id);
+                        body.append('proveedor', proveedor);
+                        var resp = await fetch(urlCalificar, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: body.toString()
+                        });
+                        var data = await resp.json();
+                        data.id = data.id || id;
+                        actualizarFila(data);
+                        if (data.ok) { ok++; } else { fallos++; }
+                    } catch (e) {
+                        fallos++;
+                        actualizarFila({ id: id, ok: false, estado: 'Error' });
+                    }
+                    recalcularPendientes();
+                }
+
+                barra.style.width = '100%';
+                barra.textContent = '100%';
+                texto.textContent = cancelado ? 'Cancelado.' : 'Listo.';
+                resumen.textContent = ok + ' calificada(s) correctamente'
+                    + (fallos > 0 ? ', ' + fallos + ' con error (revísalas individualmente).' : '.');
+                corriendo = false;
+                setControles(true);
+            }
+
+            btnPendientes.addEventListener('click', function () { correrLote('pendientes'); });
+            btnTodo.addEventListener('click', function () { correrLote('todo'); });
+            btnCancelar.addEventListener('click', function () {
+                cancelado = true;
+                texto.textContent = 'Cancelando… (termina la entrega en curso)';
+            });
+        })();
+    </script>
 }

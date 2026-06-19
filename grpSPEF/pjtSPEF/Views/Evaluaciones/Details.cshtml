@@ -36,8 +36,10 @@
         @if (!string.IsNullOrEmpty(Model.ArchivoRef))
         {
             <a href="@Url.Action("Descargar", new { id = Model.Id })" class="btn btn-outline-primary">Descargar PDF</a>
+            <a href="@Url.Action("AbrirEnDrive", new { id = Model.Id })" target="_blank" rel="noopener" class="btn btn-outline-secondary">Abrir en Drive</a>
         }
-        @{ var yaCalificada = Model.Estado == pjtSPEF.Models.Entities.EstadoEvaluacion.Calificada; }
+        @{ var yaCalificada = Model.Estado == pjtSPEF.Models.Entities.EstadoEvaluacion.Calificada
+               || Model.Estado == pjtSPEF.Models.Entities.EstadoEvaluacion.Revisada; }
         @using (Html.BeginForm("Calificar", "Evaluaciones", new { id = Model.Id }, FormMethod.Post, new { @class = "d-inline", id = "form-calificar" }))
         {
             @Html.AntiForgeryToken()
@@ -75,7 +77,11 @@
                             <span class="text-muted small">— aún sin calificar</span>
                             break;
                         case pjtSPEF.Models.Entities.EstadoEvaluacion.Calificada:
-                            <span class="badge bg-success">Calificada</span>
+                            <span class="badge bg-warning text-dark">Calificada por IA</span>
+                            <span class="text-muted small">— pendiente de tu revisión</span>
+                            break;
+                        case pjtSPEF.Models.Entities.EstadoEvaluacion.Revisada:
+                            <span class="badge bg-success">Revisada</span>
                             break;
                         case pjtSPEF.Models.Entities.EstadoEvaluacion.Error:
                             <span class="badge bg-danger">Error</span>
